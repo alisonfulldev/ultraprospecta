@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UltraProspec - Captação de Leads Instagram</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <i class="fab fa-instagram"></i>
+                <span>UltraProspec</span>
+            </div>
+            <div class="header-actions">
+                <div class="login-status" id="loginStatus">
+                    <span class="status-dot offline"></span>
+                    <span id="loginStatusText">Não conectado</span>
+                    <button class="btn btn-sm btn-outline" id="btnAbrirLogin">
+                        <i class="fas fa-sign-in-alt"></i> Login
+                    </button>
+                </div>
+                <button class="btn btn-outline" id="btnModoCaptura" style="display:none;">
+                    <i class="fas fa-crosshairs"></i> Captura
+                </button>
+                <button class="btn btn-outline" id="btnModoMonitor">
+                    <i class="fas fa-satellite-dish"></i> Monitor
+                </button>
+                <button class="btn btn-outline" id="btnImportar">
+                    <i class="fas fa-file-import"></i> Importar Dados
+                </button>
+                <button class="btn btn-primary" id="btnExportar" disabled>
+                    <i class="fas fa-file-excel"></i> Exportar Excel
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Sidebar - Configurações -->
+            <aside class="sidebar">
+                <div class="sidebar-section">
+                    <h3><i class="fas fa-bullseye"></i> Tipo de Captura</h3>
+                    <div class="capture-types">
+                        <label class="radio-card">
+                            <input type="radio" name="captureType" value="followers" checked>
+                            <div class="radio-card-content">
+                                <i class="fas fa-users"></i>
+                                <span>Seguidores</span>
+                            </div>
+                        </label>
+                        <label class="radio-card">
+                            <input type="radio" name="captureType" value="likes">
+                            <div class="radio-card-content">
+                                <i class="fas fa-heart"></i>
+                                <span>Curtidores</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3><i class="fas fa-sliders-h"></i> Configurações</h3>
+                    
+                    <div class="form-group">
+                        <label for="targetUrl">URL do Perfil/Post</label>
+                        <input type="text" id="targetUrl" placeholder="https://instagram.com/username ou URL do post">
+                        <small class="hint">Cole a URL do perfil ou do post do Instagram</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="quantity">Quantidade de Leads</label>
+                        <input type="number" id="quantity" min="1" max="1000" value="100">
+                        <small class="hint">Quantos leads deseja capturar (máx: 1000)</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="delay">Atraso entre requisições (ms)</label>
+                        <input type="number" id="delay" min="100" max="5000" value="500">
+                        <small class="hint">Atraso para evitar bloqueios</small>
+                    </div>
+
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="extractWhatsApp" checked>
+                            <span>Tentar extrair WhatsApp da bio</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="extractEmail" checked>
+                            <span>Tentar extrair email da bio</span>
+                        </label>
+                    </div>
+                </div>
+
+                <button class="btn btn-success btn-block" id="btnIniciarCaptura">
+                    <i class="fas fa-play"></i> Iniciar Captura
+                </button>
+
+                <button class="btn btn-danger btn-block" id="btnPararCaptura" style="display: none;">
+                    <i class="fas fa-stop"></i> Parar Captura
+                </button>
+            </aside>
+
+            <!-- Content Area -->
+            <div class="content">
+                <!-- Status Bar -->
+                <div class="status-bar">
+                    <div class="status-item">
+                        <i class="fas fa-database"></i>
+                        <span>Leads Capturados:</span>
+                        <strong id="leadCount">0</strong>
+                    </div>
+                    <div class="status-item">
+                        <i class="fas fa-clock"></i>
+                        <span>Tempo Decorrido:</span>
+                        <strong id="elapsedTime">00:00</strong>
+                    </div>
+                    <div class="status-item">
+                        <i class="fas fa-tachometer-alt"></i>
+                        <span>Status:</span>
+                        <strong id="captureStatus" class="status-idle">Aguardando</strong>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="progress-container" id="progressContainer" style="display: none;">
+                    <div class="progress-info">
+                        <span id="progressText">Capturando leads...</span>
+                        <span id="progressPercent">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                </div>
+
+                <!-- Results Table -->
+                <div class="results-section">
+                    <div class="results-header">
+                        <h2><i class="fas fa-list"></i> Leads Capturados</h2>
+                        <div class="results-actions">
+                            <button class="btn btn-sm btn-outline" id="btnSelecionarTodos">
+                                <i class="fas fa-check-double"></i> Selecionar Todos
+                            </button>
+                            <button class="btn btn-sm btn-outline" id="btnLimparSelecao">
+                                <i class="fas fa-times"></i> Limpar Seleção
+                            </button>
+                            <button class="btn btn-sm btn-danger" id="btnExcluirSelecionados">
+                                <i class="fas fa-trash"></i> Excluir Selecionados
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="table-container">
+                        <table class="results-table" id="resultsTable">
+                            <thead>
+                                <tr>
+                                    <th class="col-check">
+                                        <input type="checkbox" id="checkAll">
+                                    </th>
+                                    <th class="col-foto">Foto</th>
+                                    <th class="col-user">Usuário</th>
+                                    <th class="col-name">Nome</th>
+                                    <th class="col-whatsapp">WhatsApp</th>
+                                    <th class="col-email">Email</th>
+                                    <th class="col-bio">Bio</th>
+                                    <th class="col-actions">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="resultsBody">
+                                <tr class="empty-row">
+                                    <td colspan="8">
+                                        <div class="empty-state">
+                                            <i class="fas fa-user-plus"></i>
+                                            <p>Nenhum lead capturado ainda</p>
+                                            <small>Configure as opções ao lado e clique em "Iniciar Captura"</small>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Monitor Panel -->
+        <div id="monitorPanel" class="monitor-panel" style="display:none;">
+            <div class="monitor-sidebar">
+                <div class="sidebar-section">
+                    <h3><i class="fas fa-satellite-dish"></i> Monitorar Perfil</h3>
+                    <div class="form-group">
+                        <label for="monitorTarget">Usuário ou URL</label>
+                        <input type="text" id="monitorTarget" placeholder="@usuario ou URL do Instagram">
+                    </div>
+                    <div class="form-group">
+                        <label for="monitorInterval">Intervalo de verificação</label>
+                        <select id="monitorInterval">
+                            <option value="120">A cada 2 minutos</option>
+                            <option value="300" selected>A cada 5 minutos</option>
+                            <option value="600">A cada 10 minutos</option>
+                            <option value="900">A cada 15 minutos</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-success btn-block" id="btnAdicionarMonitor">
+                        <i class="fas fa-plus"></i> Adicionar Monitor
+                    </button>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3><i class="fas fa-list"></i> Perfis Monitorados <span id="monitorCount" class="badge">0/4</span></h3>
+                    <div id="monitorList" class="monitor-list">
+                        <p class="empty-monitor">Nenhum perfil monitorado ainda.</p>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <button class="btn btn-outline btn-block" id="btnExportarMonitor" disabled>
+                        <i class="fas fa-file-excel"></i> Exportar Novos
+                    </button>
+                </div>
+            </div>
+
+            <div class="monitor-content">
+                <div class="status-bar">
+                    <div class="status-item">
+                        <i class="fas fa-user-plus"></i>
+                        <span>Novos Seguidores:</span>
+                        <strong id="monitorNewCount">0</strong>
+                    </div>
+                    <div class="status-item">
+                        <i class="fas fa-circle monitor-pulse" id="monitorStatusDot"></i>
+                        <span>Status:</span>
+                        <strong id="monitorStatusText">Aguardando</strong>
+                    </div>
+                </div>
+
+                <div class="results-section">
+                    <div class="results-header">
+                        <h2><i class="fas fa-user-plus"></i> Novos Seguidores Detectados</h2>
+                        <div class="results-actions">
+                            <button class="btn btn-sm btn-danger" id="btnLimparMonitor">
+                                <i class="fas fa-trash"></i> Limpar Lista
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="results-table" id="monitorTable">
+                            <thead>
+                                <tr>
+                                    <th class="col-foto">Foto</th>
+                                    <th class="col-user">Usuário</th>
+                                    <th class="col-name">Nome</th>
+                                    <th>Perfil Monitorado</th>
+                                    <th class="col-whatsapp">WhatsApp</th>
+                                    <th class="col-email">Email</th>
+                                    <th>Detectado em</th>
+                                </tr>
+                            </thead>
+                            <tbody id="monitorBody">
+                                <tr class="empty-row">
+                                    <td colspan="7">
+                                        <div class="empty-state">
+                                            <i class="fas fa-satellite-dish"></i>
+                                            <p>Nenhum novo seguidor detectado ainda</p>
+                                            <small>Adicione um perfil para monitorar e aguarde</small>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Login Modal -->
+        <div class="modal" id="loginModal">
+            <div class="modal-content modal-sm">
+                <div class="modal-header">
+                    <h2><i class="fab fa-instagram"></i> Login no Instagram</h2>
+                    <button class="modal-close" id="closeLoginModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <!-- Tabs -->
+                    <div class="login-tabs">
+                        <button class="login-tab active" data-tab="password">
+                            <i class="fas fa-key"></i> Usuário/Senha
+                        </button>
+                        <button class="login-tab" data-tab="cookie">
+                            <i class="fas fa-cookie-bite"></i> Session ID
+                        </button>
+                    </div>
+
+                    <!-- Tab: Usuário/Senha -->
+                    <div id="tabPassword">
+                        <div id="loginStep1">
+                            <p class="login-info">
+                                <i class="fas fa-info-circle"></i>
+                                Use uma <strong>conta secundária</strong>. As credenciais ficam apenas na sua máquina.
+                            </p>
+                            <div class="form-group">
+                                <label for="igUsername">Usuário do Instagram</label>
+                                <input type="text" id="igUsername" placeholder="seu_usuario" autocomplete="off">
+                            </div>
+                            <div class="form-group">
+                                <label for="igPassword">Senha</label>
+                                <input type="password" id="igPassword" placeholder="••••••••" autocomplete="off">
+                            </div>
+                        </div>
+                        <div id="loginStep2" style="display:none;">
+                            <p class="login-info">
+                                <i class="fas fa-shield-alt"></i>
+                                O Instagram enviou um <strong>código de verificação</strong> para o email ou telefone da conta. Cole-o abaixo.
+                            </p>
+                            <div class="form-group">
+                                <label for="igCode">Código de Verificação</label>
+                                <input type="text" id="igCode" placeholder="123456" maxlength="8" autocomplete="off" style="letter-spacing: 4px; font-size: 1.3rem; text-align: center;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Session ID -->
+                    <div id="tabCookie" style="display:none;">
+                        <p class="login-info">
+                            <i class="fas fa-cookie-bite"></i>
+                            Mais confiável — sem bloqueio do Instagram.
+                        </p>
+                        <ol class="cookie-steps">
+                            <li>Abra <strong>instagram.com</strong> no Chrome e faça login normalmente</li>
+                            <li>Pressione <strong>F12</strong> → aba <strong>Application</strong></li>
+                            <li>Vá em <strong>Cookies → instagram.com</strong></li>
+                            <li>Copie o valor do cookie <strong>sessionid</strong></li>
+                        </ol>
+                        <div class="form-group">
+                            <label for="igCookieUsername">Seu usuário do Instagram</label>
+                            <input type="text" id="igCookieUsername" placeholder="seu_usuario" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="igSessionId">sessionid</label>
+                            <input type="text" id="igSessionId" placeholder="Cole o valor do cookie sessionid" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="igCsrfToken">csrftoken</label>
+                            <input type="text" id="igCsrfToken" placeholder="Cole o valor do cookie csrftoken" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="igDsUserId">ds_user_id</label>
+                            <input type="text" id="igDsUserId" placeholder="Cole o valor do cookie ds_user_id" autocomplete="off">
+                        </div>
+                    </div>
+
+                    <p class="login-error" id="loginError" style="display:none;"></p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" id="btnCancelLogin">Cancelar</button>
+                    <button class="btn btn-success" id="btnConfirmLogin">
+                        <i class="fas fa-sign-in-alt"></i> Entrar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Import Modal -->
+        <div class="modal" id="importModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2><i class="fas fa-file-import"></i> Importar Dados</h2>
+                    <button class="modal-close" id="closeImportModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="import-area" id="importArea">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>Arraste um arquivo aqui ou clique para selecionar</p>
+                        <small>Formatos suportados: CSV, Excel (.xlsx, .xls)</small>
+                        <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" hidden>
+                    </div>
+                    <div class="import-preview" id="importPreview" style="display: none;">
+                        <h4>Preview dos dados:</h4>
+                        <div class="preview-table-container">
+                            <table class="preview-table" id="previewTable">
+                                <thead></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                        <p class="import-summary" id="importSummary"></p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" id="btnCancelImport">Cancelar</button>
+                    <button class="btn btn-primary" id="btnConfirmImport" disabled>Importar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div class="toast-container" id="toastContainer"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
