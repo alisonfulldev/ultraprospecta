@@ -427,6 +427,7 @@ body {
     flex: 1;
     overflow: auto;
     padding: 0;
+    -webkit-overflow-scrolling: touch;
 }
 
 .results-table {
@@ -784,15 +785,22 @@ body {
     background: rgba(255, 255, 255, 0.3);
 }
 
-/* Responsive */
+/* ── RESPONSIVE ── */
+
 @media (max-width: 1024px) {
     .main-content {
         flex-direction: column;
+        padding: 1rem 1.5rem;
     }
-    
     .sidebar {
         width: 100%;
         position: static;
+    }
+    .capture-type-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    .capture-type-card.full-width {
+        grid-column: 1 / -1;
     }
 }
 
@@ -1244,29 +1252,116 @@ body {
 .btn-danger:hover { background: #a93226; }
 
 @media (max-width: 768px) {
+    /* Header */
     .header {
-        flex-direction: column;
-        gap: 1rem;
+        padding: 0.75rem 1rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
     }
-    
+    .header-actions {
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: flex-end;
+    }
+
+    /* Main layout */
+    .main-content { padding: 0.75rem 1rem; gap: 0.75rem; }
+
+    /* Status bar: 2-column grid */
     .status-bar {
-        flex-wrap: wrap;
-        gap: 1rem;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.625rem;
+        padding: 0.75rem 1rem;
     }
-    
-    .results-header {
-        flex-direction: column;
-        gap: 1rem;
-        align-items: flex-start;
-    }
-    
-    .results-actions {
-        flex-wrap: wrap;
-    }
-    
-    .col-bio {
-        display: none;
-    }
+
+    /* Filter bar: stack vertically */
+    .filter-bar { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+    .filter-group { flex-wrap: wrap; }
+    #filterSearch { width: 100%; box-sizing: border-box; }
+
+    /* Results header */
+    .results-header { flex-direction: column; gap: 0.625rem; align-items: flex-start; }
+    .results-actions { flex-wrap: wrap; gap: 0.4rem; }
+
+    /* Table: hide "Por que quente" (5th) and Bio (8th) */
+    .results-table th:nth-child(5),
+    .results-table td:nth-child(5),
+    .results-table th:nth-child(8),
+    .results-table td:nth-child(8) { display: none; }
+
+    /* Modal */
+    .modal-content { width: 95%; max-height: 92vh; }
+    .modal-content.modal-sm { max-width: 95%; }
+
+    /* Toast */
+    .toast-container { left: 0.75rem; right: 0.75rem; bottom: 0.75rem; }
+    .toast { font-size: 0.8rem; padding: 0.75rem 1rem; }
+
+    /* Capture types: 2 col on tablet */
+    .capture-type-grid { grid-template-columns: 1fr 1fr; }
+
+    /* Sidebar */
+    .sidebar { padding: 1rem; gap: 1rem; }
+}
+
+@media (max-width: 480px) {
+    /* Header: tighter, hide secondary text */
+    .header { padding: 0.625rem 0.75rem; }
+    .logo span { font-size: 1.25rem; }
+
+    /* Credits chip: hide "leads" label */
+    .credits-display .credits-label { display: none; }
+    .credits-display { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+
+    /* Instagram status: hide "Instagram" text */
+    #loginStatusText { display: none; }
+    .login-status { padding: 0.3rem 0.6rem; }
+
+    /* Shrink buy button */
+    #btnBuyCredits { font-size: 0.75rem; padding: 0.4rem 0.75rem; }
+
+    /* Compact import/export buttons: icon only */
+    #btnImportar span, #btnExportar span, #btnExportarPDF span { display: none; }
+
+    /* Main */
+    .main-content { padding: 0.5rem 0.75rem; gap: 0.5rem; }
+
+    /* Status bar */
+    .status-bar { padding: 0.625rem 0.75rem; gap: 0.5rem; }
+    .status-item { font-size: 0.78rem; }
+
+    /* Table: also hide Email (7th) on very small screens */
+    .results-table th:nth-child(7),
+    .results-table td:nth-child(7) { display: none; }
+
+    /* Capture type cards: hide description text */
+    .capture-type-card small { display: none; }
+    .capture-type-card.full-width small { display: block; font-size: 0.7rem; }
+
+    /* Sidebar */
+    .sidebar { padding: 0.875rem; }
+
+    /* Modals fill screen */
+    .modal-content { width: 99%; max-height: 96vh; border-radius: var(--radius-sm); }
+    .modal-body { padding: 1rem; }
+    .modal-header, .modal-footer { padding: 0.875rem 1rem; }
+
+    /* Toast: near full width */
+    .toast-container { left: 0.5rem; right: 0.5rem; bottom: 0.5rem; }
+
+    /* Buttons in modal footer: stack */
+    .modal-footer { flex-direction: column-reverse; gap: 0.5rem; }
+    .modal-footer .btn { width: 100%; justify-content: center; }
+
+    /* Filter bar compact */
+    .filter-bar { padding: 0.5rem 0.75rem; }
+    .filter-btn { padding: 0.25rem 0.65rem; font-size: 0.75rem; }
+    .filter-check { font-size: 0.75rem; }
+
+    /* Progress container */
+    .progress-container { padding: 0.75rem 1rem; }
 }
 
 /* ── SAAS: Créditos ── */
