@@ -1,7 +1,7 @@
 {
   "name": "ultraprospec",
-  "version": "1.0.0",
-  "description": "Sistema de captação de leads do Instagram",
+  "version": "2.0.0",
+  "description": "SaaS de captação de leads qualificados do Instagram",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -11,7 +11,9 @@
     "axios": "^1.6.0",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "instagram-private-api": "^1.45.3"
+    "express-session": "^1.19.0",
+    "instagram-private-api": "^1.45.3",
+    "stripe": "^14.25.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

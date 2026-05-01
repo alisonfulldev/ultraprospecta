@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UltraProspec — Entrar / Cadastrar</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--g:#00C853;--gd:#00962E;--dark:#071210;--dark2:#0D3B1E;--white:#fff;--bg:#F9FEFB;--text:#0D1F14;--muted:#4B6250;--border:#C8E6C9;--err:#E74C3C;--rs:10px;--tr:all .25s ease}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:linear-gradient(140deg,#071210 0%,#0D3B1E 55%,#071C0E 100%);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem 1rem;position:relative;overflow:hidden}
+body::before{content:'';position:absolute;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(0,200,83,.1) 0%,transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none}
+.back-link{position:absolute;top:1.5rem;left:2rem;display:flex;align-items:center;gap:.5rem;color:rgba(255,255,255,.5);text-decoration:none;font-size:.85rem;transition:var(--tr)}
+.back-link:hover{color:var(--g)}
+.card{background:#fff;border-radius:20px;padding:2.5rem 2.25rem;width:100%;max-width:420px;box-shadow:0 24px 80px rgba(0,0,0,.35);position:relative}
+.logo-wrap{display:flex;align-items:center;justify-content:center;gap:.55rem;margin-bottom:1.75rem}
+.logo-txt{font-size:1.2rem;font-weight:800;color:var(--text);letter-spacing:-.4px}
+.logo-txt span{color:var(--g)}
+.tabs{display:flex;border-radius:var(--rs);background:#f1f5f1;padding:4px;gap:4px;margin-bottom:2rem}
+.tab{flex:1;padding:.55rem;border:none;border-radius:7px;background:transparent;font-size:.9rem;font-weight:600;color:var(--muted);cursor:pointer;transition:var(--tr);font-family:inherit}
+.tab.active{background:#fff;color:var(--gd);box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.form-section{display:none}
+.form-section.active{display:block}
+.field{margin-bottom:1.1rem}
+.field label{display:block;font-size:.8rem;font-weight:600;color:var(--muted);margin-bottom:.4rem}
+.field input{width:100%;padding:.75rem 1rem;border:1.5px solid var(--border);border-radius:var(--rs);font-size:.925rem;color:var(--text);transition:var(--tr);outline:none;font-family:inherit;background:#fff}
+.field input:focus{border-color:var(--g);box-shadow:0 0 0 3px rgba(0,200,83,.12)}
+.field input::placeholder{color:#aaa}
+.field input.error{border-color:var(--err)}
+.alert{padding:.7rem 1rem;border-radius:var(--rs);font-size:.84rem;margin-bottom:1rem;display:none}
+.alert.error{background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C}
+.alert.success{background:#F0FFF4;border:1px solid #BBF7D0;color:#166534}
+.btn-submit{width:100%;padding:.85rem;background:linear-gradient(135deg,var(--g),var(--gd));color:#fff;border:none;border-radius:var(--rs);font-size:1rem;font-weight:700;cursor:pointer;transition:var(--tr);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:.5rem;margin-top:.25rem}
+.btn-submit:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,200,83,.35)}
+.btn-submit:disabled{opacity:.6;cursor:not-allowed;transform:none;box-shadow:none}
+.divider{display:flex;align-items:center;gap:.75rem;margin:1.25rem 0;color:#ccc;font-size:.78rem}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:#e5e7eb}
+.free-badge{background:#F0FFF4;border:1px solid #BBF7D0;border-radius:var(--rs);padding:.75rem 1rem;margin-bottom:1.4rem;display:flex;align-items:center;gap:.6rem}
+.free-badge-icon{font-size:1.4rem}
+.free-badge-text strong{display:block;font-size:.88rem;color:var(--gd);font-weight:700}
+.free-badge-text span{font-size:.78rem;color:var(--muted)}
+.spinner{width:18px;height:18px;border:2.5px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.footer-note{margin-top:1.5rem;text-align:center;font-size:.78rem;color:var(--muted)}
+.footer-note a{color:var(--g);text-decoration:none;font-weight:600}
+</style>
+</head>
+<body>
+
+<a href="landing.html" class="back-link">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+  Voltar para a página inicial
+</a>
+
+<div class="card">
+  <!-- Logo -->
+  <div class="logo-wrap">
+    <svg width="32" height="32" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="lg" x1="0" y1="0" x2="34" y2="34" gradientUnits="userSpaceOnUse"><stop stop-color="#00E676"/><stop offset="1" stop-color="#00962E"/></linearGradient></defs>
+      <rect width="34" height="34" rx="10" fill="url(#lg)"/>
+      <circle cx="17" cy="17" r="8.5" stroke="white" stroke-width="1.5" fill="none"/>
+      <circle cx="17" cy="17" r="3" fill="white"/>
+      <line x1="17" y1="5.5" x2="17" y2="10" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="17" y1="24" x2="17" y2="28.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="5.5" y1="17" x2="10" y2="17" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="24" y1="17" x2="28.5" y2="17" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <span class="logo-txt">Ultra<span>Prospec</span></span>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('register')">Criar Conta</button>
+    <button class="tab" onclick="switchTab('login')">Entrar</button>
+  </div>
+
+  <!-- REGISTER -->
+  <div class="form-section active" id="sectionRegister">
+    <div class="free-badge">
+      <span class="free-badge-icon">🎁</span>
+      <div class="free-badge-text">
+        <strong>20 leads grátis ao criar sua conta</strong>
+        <span>Sem cartão de crédito. Comece agora.</span>
+      </div>
+    </div>
+    <div class="alert" id="regAlert"></div>
+    <div class="field">
+      <label>Nome completo</label>
+      <input type="text" id="regName" placeholder="Seu nome" autocomplete="name">
+    </div>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="regEmail" placeholder="seu@email.com" autocomplete="email">
+    </div>
+    <div class="field">
+      <label>Senha</label>
+      <input type="password" id="regPassword" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+    </div>
+    <button class="btn-submit" id="btnRegister" onclick="register()">
+      <div class="spinner" id="regSpinner"></div>
+      <span id="regBtnText">🚀 Criar conta grátis</span>
+    </button>
+  </div>
+
+  <!-- LOGIN -->
+  <div class="form-section" id="sectionLogin">
+    <div class="alert" id="loginAlert"></div>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email">
+    </div>
+    <div class="field">
+      <label>Senha</label>
+      <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn-submit" id="btnLogin" onclick="login()">
+      <div class="spinner" id="loginSpinner"></div>
+      <span id="loginBtnText">Entrar na plataforma</span>
+    </button>
+  </div>
+
+  <p class="footer-note">
+    Ao continuar você concorda com nossos <a href="#">Termos de Uso</a> e <a href="#">Política de Privacidade</a>.
+  </p>
+</div>
+
+<script>
+var activeTab = 'register';
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(function(t, i) {
+    t.classList.toggle('active', (i === 0 && tab === 'register') || (i === 1 && tab === 'login'));
+  });
+  document.getElementById('sectionRegister').classList.toggle('active', tab === 'register');
+  document.getElementById('sectionLogin').classList.toggle('active', tab === 'login');
+  clearAlerts();
+}
+
+function clearAlerts() {
+  ['regAlert','loginAlert'].forEach(function(id) {
+    var el = document.getElementById(id);
+    el.style.display = 'none'; el.className = 'alert';
+  });
+}
+
+function showAlert(id, msg, type) {
+  var el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = 'alert ' + type;
+  el.style.display = 'block';
+}
+
+function setLoading(prefix, loading) {
+  var btn = document.getElementById('btn' + (prefix === 'reg' ? 'Register' : 'Login'));
+  var sp  = document.getElementById(prefix + 'Spinner');
+  var txt = document.getElementById(prefix + 'BtnText');
+  btn.disabled   = loading;
+  sp.style.display  = loading ? 'block' : 'none';
+  txt.style.display = loading ? 'none' : 'inline';
+}
+
+async function register() {
+  var name     = document.getElementById('regName').value.trim();
+  var email    = document.getElementById('regEmail').value.trim();
+  var password = document.getElementById('regPassword').value;
+  clearAlerts();
+  if (!name || !email || !password) { showAlert('regAlert', 'Preencha todos os campos.', 'error'); return; }
+  setLoading('reg', true);
+  try {
+    var res  = await fetch('/api/auth/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, email, password}) });
+    var data = await res.json();
+    if (data.success) {
+      showAlert('regAlert', '✅ Conta criada! Redirecionando...', 'success');
+      setTimeout(function() { window.location.href = 'index.html'; }, 800);
+    } else {
+      showAlert('regAlert', data.error || 'Erro ao criar conta.', 'error');
+    }
+  } catch(e) { showAlert('regAlert', 'Erro de conexão. Tente novamente.', 'error'); }
+  setLoading('reg', false);
+}
+
+async function login() {
+  var email    = document.getElementById('loginEmail').value.trim();
+  var password = document.getElementById('loginPassword').value;
+  clearAlerts();
+  if (!email || !password) { showAlert('loginAlert', 'Informe email e senha.', 'error'); return; }
+  setLoading('login', true);
+  try {
+    var res  = await fetch('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email, password}) });
+    var data = await res.json();
+    if (data.success) {
+      window.location.href = 'index.html';
+    } else {
+      showAlert('loginAlert', data.error || 'Email ou senha incorretos.', 'error');
+    }
+  } catch(e) { showAlert('loginAlert', 'Erro de conexão. Tente novamente.', 'error'); }
+  setLoading('login', false);
+}
+
+// Enter para submeter
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Enter') return;
+  if (activeTab === 'register') register();
+  else login();
+});
+
+// Se já está logado, redireciona
+fetch('/api/auth/me').then(function(r) {
+  if (r.ok) window.location.href = 'index.html';
+});
+</script>
+</body>
+</html>
