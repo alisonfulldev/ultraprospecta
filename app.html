@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UltraProspec</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+<div class="app-container">
+
+    <!-- Header -->
+    <header class="header">
+        <a href="index.html" class="logo" style="text-decoration:none;color:white">
+            <svg width="32" height="32" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="logoGrad" x1="0" y1="0" x2="34" y2="34" gradientUnits="userSpaceOnUse">
+                        <stop stop-color="#00E676"/>
+                        <stop offset="1" stop-color="#00962E"/>
+                    </linearGradient>
+                </defs>
+                <rect width="34" height="34" rx="10" fill="url(#logoGrad)"/>
+                <circle cx="17" cy="17" r="8.5" stroke="white" stroke-width="1.5" fill="none"/>
+                <circle cx="17" cy="17" r="3" fill="white"/>
+                <line x1="17" y1="5.5" x2="17" y2="10" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="17" y1="24" x2="17" y2="28.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="5.5" y1="17" x2="10" y2="17" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="24" y1="17" x2="28.5" y2="17" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <span>UltraProspec</span>
+        </a>
+        <div class="header-actions">
+            <!-- Créditos -->
+            <div class="credits-display" id="creditsDisplay" style="display:none">
+                <span class="credits-icon">⚡</span>
+                <span id="creditsCount">0</span>
+                <span class="credits-label">leads</span>
+            </div>
+            <button class="btn btn-success btn-sm" id="btnBuyCredits" onclick="openBuyModal()" style="display:none">
+                + 100 Leads — R$10
+            </button>
+            <!-- Status Instagram -->
+            <div class="login-status" id="loginStatus">
+                <span class="status-dot offline" id="statusDot"></span>
+                <span id="loginStatusText">Instagram</span>
+                <button class="btn btn-sm btn-outline" id="btnAbrirLogin">
+                    <i class="fas fa-sign-in-alt"></i> Conectar IG
+                </button>
+            </div>
+            <button class="btn btn-outline" id="btnImportar">
+                <i class="fas fa-file-import"></i> Importar
+            </button>
+            <button class="btn btn-outline" id="btnExportar" disabled>
+                <i class="fas fa-file-csv"></i> CSV
+            </button>
+            <button class="btn btn-primary" id="btnExportarPDF" disabled>
+                <i class="fas fa-file-pdf"></i> PDF
+            </button>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <main class="main-content">
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="mainSidebar">
+
+            <!-- Tipo de Captura -->
+            <div class="sidebar-section">
+                <h3><i class="fas fa-crosshairs"></i> Tipo de Captura</h3>
+                <div class="capture-type-grid">
+                    <label class="capture-type-card active full-width" data-type="profile_analysis">
+                        <input type="radio" name="captureType" value="profile_analysis" checked>
+                        <i class="fas fa-chart-bar"></i>
+                        <span>Análise Completa ⭐</span>
+                        <small>Seguidores + curtidores + comentaristas em um só clique</small>
+                    </label>
+                    <label class="capture-type-card" data-type="recent_likes">
+                        <input type="radio" name="captureType" value="recent_likes">
+                        <i class="fas fa-heart"></i>
+                        <span>Curtidores Recentes</span>
+                        <small>Posts recentes de um perfil</small>
+                    </label>
+                    <label class="capture-type-card" data-type="comments">
+                        <input type="radio" name="captureType" value="comments">
+                        <i class="fas fa-comment"></i>
+                        <span>Comentaristas</span>
+                        <small>Comentaristas de um post</small>
+                    </label>
+                    <label class="capture-type-card" data-type="common_followers">
+                        <input type="radio" name="captureType" value="common_followers">
+                        <i class="fas fa-users"></i>
+                        <span>Seguidores em Comum</span>
+                        <small>Segue múltiplos perfis</small>
+                    </label>
+                    <label class="capture-type-card" data-type="followers">
+                        <input type="radio" name="captureType" value="followers">
+                        <i class="fas fa-user-plus"></i>
+                        <span>Seguidores</span>
+                        <small>Seguidores de um perfil</small>
+                    </label>
+                    <label class="capture-type-card" data-type="hashtag">
+                        <input type="radio" name="captureType" value="hashtag">
+                        <i class="fas fa-search"></i>
+                        <span>Busca por Profissional</span>
+                        <small>Encontra perfis por profissão ou nicho</small>
+                    </label>
+                    <label class="capture-type-card" data-type="likes">
+                        <input type="radio" name="captureType" value="likes">
+                        <i class="fas fa-thumbs-up"></i>
+                        <span>Curtidores</span>
+                        <small>Curtidores de um post</small>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Configurações dinâmicas por tipo -->
+            <div class="sidebar-section">
+                <h3><i class="fas fa-sliders-h"></i> Configurações</h3>
+
+                <!-- profile_analysis -->
+                <div class="capture-config" id="config-profile_analysis">
+                    <div class="form-group">
+                        <label>Perfil do Concorrente</label>
+                        <input type="text" class="target-input" placeholder="@usuario ou URL do perfil">
+                    </div>
+                    <div class="form-group">
+                        <label>Posts recentes para analisar</label>
+                        <select class="posts-input">
+                            <option value="5">5 posts</option>
+                            <option value="10" selected>10 posts</option>
+                            <option value="20">20 posts</option>
+                            <option value="30">30 posts</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- recent_likes -->
+                <div class="capture-config" id="config-recent_likes" style="display:none">
+                    <div class="form-group">
+                        <label>Perfil do Instagram</label>
+                        <input type="text" class="target-input" placeholder="@usuario ou URL do perfil">
+                    </div>
+                    <div class="form-group">
+                        <label>Últimos posts a varrer</label>
+                        <select class="posts-input">
+                            <option value="5">5 posts</option>
+                            <option value="10" selected>10 posts</option>
+                            <option value="20">20 posts</option>
+                            <option value="30">30 posts</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- comments -->
+                <div class="capture-config" id="config-comments" style="display:none">
+                    <div class="form-group">
+                        <label>URL do Post</label>
+                        <input type="text" class="target-input" placeholder="https://instagram.com/p/CODIGO/">
+                    </div>
+                </div>
+
+                <!-- common_followers -->
+                <div class="capture-config" id="config-common_followers" style="display:none">
+                    <div class="form-group">
+                        <label>Perfis (separados por vírgula)</label>
+                        <textarea class="target-input" rows="3" placeholder="@perfil1, @perfil2, @perfil3"></textarea>
+                        <small class="hint">Mínimo 2 perfis. Retorna quem segue 2 ou mais.</small>
+                    </div>
+                </div>
+
+                <!-- followers -->
+                <div class="capture-config" id="config-followers" style="display:none">
+                    <div class="form-group">
+                        <label>Perfil do Instagram</label>
+                        <input type="text" class="target-input" placeholder="@usuario ou URL do perfil">
+                    </div>
+                </div>
+
+                <!-- hashtag -->
+                <div class="capture-config" id="config-hashtag" style="display:none">
+                    <div class="form-group">
+                        <label>Perfil alvo para varrer</label>
+                        <input type="text" id="hashtagProfile" placeholder="@perfil ou URL do Instagram">
+                        <small class="hint">Ex: conta de uma agência, concorrente ou comunidade do nicho.</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Profissão / Palavras-chave</label>
+                        <textarea class="target-input" rows="2" placeholder="gestor de trafego, trafego pago, google ads"></textarea>
+                        <small class="hint">Filtra só quem tem essas palavras no nome, usuário, bio ou categoria.</small>
+                    </div>
+                </div>
+
+                <!-- likes -->
+                <div class="capture-config" id="config-likes" style="display:none">
+                    <div class="form-group">
+                        <label>URL do Post</label>
+                        <input type="text" class="target-input" placeholder="https://instagram.com/p/CODIGO/">
+                    </div>
+                </div>
+
+                <!-- Configurações comuns -->
+                <div class="form-group">
+                    <label>Quantidade máxima</label>
+                    <input type="number" id="quantity" min="1" max="2000" value="200">
+                </div>
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="extractWhatsApp" checked>
+                        <span>Extrair WhatsApp da bio</span>
+                    </label>
+                </div>
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="extractEmail" checked>
+                        <span>Extrair email da bio</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Segmentação -->
+            <div class="sidebar-section">
+                <h3><i class="fas fa-filter"></i> Segmentação</h3>
+                <div class="form-group">
+                    <label>Perfil do Lead</label>
+                    <select id="segmentType">
+                        <option value="all">Todos os perfis</option>
+                        <option value="b2c">B2C — Pessoa física</option>
+                        <option value="b2b">B2B — Conta empresarial</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Cidade / Região</label>
+                    <input type="text" id="segmentCity" placeholder="Ex: São Paulo">
+                    <small class="hint">Filtra por cidade configurada no perfil</small>
+                </div>
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="segmentActive">
+                        <span>Só contas ativas (tem posts)</span>
+                    </label>
+                </div>
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="segmentReachable">
+                        <span>Só com contato (WhatsApp ou email)</span>
+                    </label>
+                </div>
+            </div>
+
+            <button class="btn btn-success btn-block" id="btnIniciarCaptura">
+                <i class="fas fa-play"></i> Iniciar Captura
+            </button>
+            <button class="btn btn-danger btn-block" id="btnPararCaptura" style="display:none">
+                <i class="fas fa-stop"></i> Parar Captura
+            </button>
+        </aside>
+
+        <!-- Content -->
+        <div class="content">
+
+            <!-- Status Bar -->
+            <div class="status-bar">
+                <div class="status-item">
+                    <i class="fas fa-database"></i>
+                    <span>Total:</span>
+                    <strong id="leadCount">0</strong>
+                </div>
+                <div class="status-item">
+                    <i class="fas fa-fire"></i>
+                    <span>Quentes:</span>
+                    <strong id="hotCount">0</strong>
+                </div>
+                <div class="status-item">
+                    <i class="fas fa-clock"></i>
+                    <span>Tempo:</span>
+                    <strong id="elapsedTime">00:00</strong>
+                </div>
+                <div class="status-item">
+                    <i class="fas fa-circle" id="statusDotCapture"></i>
+                    <span id="captureStatusText">Aguardando</span>
+                </div>
+            </div>
+
+            <!-- Progress -->
+            <div class="progress-container" id="progressContainer" style="display:none">
+                <div class="progress-info">
+                    <span id="progressText">Capturando...</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filter-bar">
+                <div class="filter-group">
+                    <button class="filter-btn active" data-filter="all">Todos</button>
+                    <button class="filter-btn" data-filter="hot">🔥 Quentes</button>
+                    <button class="filter-btn" data-filter="warm">🌡️ Mornos</button>
+                    <button class="filter-btn" data-filter="cold">❄️ Frios</button>
+                </div>
+                <div class="filter-group">
+                    <label class="filter-check">
+                        <input type="checkbox" id="filterWhatsApp"> Só com WhatsApp
+                    </label>
+                    <label class="filter-check">
+                        <input type="checkbox" id="filterEmail"> Só com Email
+                    </label>
+                    <label class="filter-check">
+                        <input type="checkbox" id="filterPublic"> Só públicos
+                    </label>
+                </div>
+                <div class="filter-group">
+                    <input type="text" id="filterSearch" placeholder="Buscar por usuário ou nome...">
+                </div>
+            </div>
+
+            <!-- Leads Table -->
+            <div class="results-section">
+                <div class="results-header">
+                    <h2><i class="fas fa-users"></i> Leads <span id="filteredCount" class="badge-count"></span></h2>
+                    <div class="results-actions">
+                        <button class="btn btn-sm btn-outline" id="btnSelecionarTodos">
+                            <i class="fas fa-check-double"></i> Selecionar Todos
+                        </button>
+                        <button class="btn btn-sm btn-outline" id="btnLimparSelecao">
+                            <i class="fas fa-times"></i> Limpar
+                        </button>
+                        <button class="btn btn-sm btn-danger" id="btnExcluirSelecionados">
+                            <i class="fas fa-trash"></i> Excluir
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table class="results-table" id="resultsTable">
+                        <thead>
+                            <tr>
+                                <th class="col-check"><input type="checkbox" id="checkAll"></th>
+                                <th class="col-foto">Foto</th>
+                                <th class="col-user">Usuário</th>
+                                <th class="col-score">Score</th>
+                                <th class="col-why">Por que quente</th>
+                                <th class="col-whatsapp">WhatsApp</th>
+                                <th class="col-email">Email</th>
+                                <th class="col-bio">Bio</th>
+                                <th class="col-actions">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsBody">
+                            <tr class="empty-row" id="emptyRow">
+                                <td colspan="10">
+                                    <div class="empty-state">
+                                        <i class="fas fa-crosshairs"></i>
+                                        <p>Nenhum lead capturado ainda</p>
+                                        <small>Selecione um tipo de captura e clique em Iniciar</small>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- Login Modal -->
+<div class="modal" id="loginModal">
+    <div class="modal-content modal-sm">
+        <div class="modal-header">
+            <h2><i class="fab fa-instagram"></i> Login no Instagram</h2>
+            <button class="modal-close" id="closeLoginModal">&times;</button>
+        </div>
+        <div class="modal-body">
+
+            <!-- Aviso conta secundária -->
+            <div style="background:rgba(243,156,18,.12);border:1px solid rgba(243,156,18,.4);border-radius:8px;padding:.85rem 1rem;margin-bottom:1.25rem;display:flex;gap:.6rem;align-items:flex-start">
+                <span style="font-size:1.1rem;flex-shrink:0">⚠️</span>
+                <div>
+                    <strong style="color:#F39C12;font-size:.83rem;display:block;margin-bottom:.2rem">Use uma conta secundária ou fake</strong>
+                    <span style="color:rgba(255,255,255,.6);font-size:.78rem;line-height:1.5">Nunca conecte sua conta principal. Crie uma conta nova no Instagram só para usar aqui — isso protege o seu perfil pessoal.</span>
+                </div>
+            </div>
+
+            <div class="login-tabs">
+                <button class="login-tab active" data-tab="cookie"><i class="fas fa-cookie-bite"></i> Session ID</button>
+                <button class="login-tab" data-tab="password"><i class="fas fa-key"></i> Senha</button>
+            </div>
+
+            <div id="tabCookie">
+                <p class="login-info"><i class="fas fa-info-circle"></i> Mais confiável. Copie os cookies do seu browser.</p>
+                <ol class="cookie-steps">
+                    <li>Abra <strong>instagram.com</strong> no Chrome logado</li>
+                    <li><strong>F12</strong> → Application → Cookies → instagram.com</li>
+                    <li>Copie os valores de <strong>sessionid</strong>, <strong>csrftoken</strong> e <strong>ds_user_id</strong></li>
+                </ol>
+                <div class="form-group">
+                    <label>Seu @usuário</label>
+                    <input type="text" id="igCookieUsername" placeholder="seu_usuario" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>sessionid</label>
+                    <input type="text" id="igSessionId" placeholder="Cole o valor do sessionid" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>csrftoken</label>
+                    <input type="text" id="igCsrfToken" placeholder="Cole o valor do csrftoken" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>ds_user_id</label>
+                    <input type="text" id="igDsUserId" placeholder="Cole o valor do ds_user_id" autocomplete="off">
+                </div>
+            </div>
+
+            <div id="tabPassword" style="display:none">
+                <p class="login-info"><i class="fas fa-info-circle"></i> Use uma conta secundária.</p>
+                <div id="loginStep1">
+                    <div class="form-group">
+                        <label>Usuário</label>
+                        <input type="text" id="igUsername" placeholder="seu_usuario" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label>Senha</label>
+                        <input type="password" id="igPassword" placeholder="••••••••" autocomplete="off">
+                    </div>
+                </div>
+                <div id="loginStep2" style="display:none">
+                    <p class="login-info"><i class="fas fa-shield-alt"></i> Código enviado pelo Instagram.</p>
+                    <div class="form-group">
+                        <label>Código de Verificação</label>
+                        <input type="text" id="igCode" placeholder="123456" maxlength="8" style="letter-spacing:4px;font-size:1.3rem;text-align:center">
+                    </div>
+                </div>
+            </div>
+
+            <p class="login-error" id="loginError" style="display:none"></p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" id="btnCancelLogin">Cancelar</button>
+            <button class="btn btn-success" id="btnConfirmLogin">
+                <i class="fas fa-sign-in-alt"></i> Entrar
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal" id="importModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="fas fa-file-import"></i> Importar Dados</h2>
+            <button class="modal-close" id="closeImportModal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="import-area" id="importArea">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p>Arraste um arquivo ou clique para selecionar</p>
+                <small>Formatos: CSV, Excel (.xlsx, .xls)</small>
+                <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" hidden>
+            </div>
+            <div class="import-preview" id="importPreview" style="display:none">
+                <h4>Preview:</h4>
+                <div class="preview-table-container">
+                    <table class="preview-table" id="previewTable"><thead></thead><tbody></tbody></table>
+                </div>
+                <p class="import-summary" id="importSummary"></p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" id="btnCancelImport">Cancelar</button>
+            <button class="btn btn-primary" id="btnConfirmImport" disabled>Importar</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ── MODAL: Comprar Leads ── -->
+<div class="modal" id="buyModal">
+    <div class="modal-content modal-sm">
+        <div class="modal-header">
+            <h2>⚡ Comprar 100 Leads</h2>
+            <button class="modal-close" onclick="closeBuyModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="text-align:center;padding:1.5rem 1.5rem 1rem">
+            <div style="font-size:3rem;font-weight:900;color:var(--primary);line-height:1">R$10</div>
+            <div style="color:rgba(255,255,255,.5);font-size:.85rem;margin:.4rem 0 1.25rem">100 leads qualificados · R$0,10 por lead</div>
+            <ul style="list-style:none;text-align:left;margin-bottom:1.5rem">
+                <li style="color:rgba(255,255,255,.7);font-size:.875rem;padding:.35rem 0;display:flex;align-items:center;gap:.6rem"><span style="color:var(--primary)">✓</span> WhatsApp e email extraídos automaticamente</li>
+                <li style="color:rgba(255,255,255,.7);font-size:.875rem;padding:.35rem 0;display:flex;align-items:center;gap:.6rem"><span style="color:var(--primary)">✓</span> Score de qualificação por comportamento</li>
+                <li style="color:rgba(255,255,255,.7);font-size:.875rem;padding:.35rem 0;display:flex;align-items:center;gap:.6rem"><span style="color:var(--primary)">✓</span> Exportação PDF e CSV profissional</li>
+                <li style="color:rgba(255,255,255,.7);font-size:.875rem;padding:.35rem 0;display:flex;align-items:center;gap:.6rem"><span style="color:var(--primary)">✓</span> Todos os nichos atendidos</li>
+            </ul>
+            <p id="buyError" style="display:none;color:#ff6b6b;font-size:.83rem;margin-bottom:.75rem"></p>
+        </div>
+        <div class="modal-footer" style="flex-direction:column;gap:.75rem">
+            <button class="btn btn-success btn-block" id="btnCheckout" onclick="goToCheckout()" style="justify-content:center;font-size:1rem;padding:.85rem">
+                <i class="fas fa-credit-card"></i> Pagar R$10 com Stripe
+            </button>
+            <button class="btn btn-outline btn-block" onclick="closeBuyModal()" style="justify-content:center">Cancelar</button>
+            <button onclick="simulatePayment()" style="background:none;border:none;color:rgba(255,255,255,.25);font-size:.72rem;cursor:pointer;padding:.25rem;font-family:inherit">
+                [modo teste: simular compra]
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,516 +1,593 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UltraProspec</title>
-    <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UltraProspec — Leads Ultra Qualificados do Instagram Para Qualquer Nicho</title>
+<meta name="description" content="Capture leads qualificados do Instagram com WhatsApp e email automáticos. Score de qualificação inteligente. Todos os nichos atendidos.">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+:root{
+  --g:#00C853;--gd:#00962E;--gb:#00E676;--gl:#E8F5E9;
+  --dark:#071210;--dark2:#0D3B1E;
+  --text:#0D1F14;--muted:#4B6250;--border:#C8E6C9;
+  --white:#fff;--bg:#F9FEFB;
+  --r:14px;--rs:9px;
+  --sh:0 4px 24px rgba(0,200,83,.13);
+  --tr:all .28s ease;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,sans-serif;background:#fff;color:var(--text);line-height:1.6;overflow-x:hidden}
+
+/* ── HEADER ── */
+.hd{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;justify-content:space-between;align-items:center;padding:.9rem 2.5rem;background:rgba(7,18,16,.93);backdrop-filter:blur(14px);border-bottom:1px solid rgba(0,200,83,.13)}
+.logo{display:flex;align-items:center;gap:.55rem;text-decoration:none}
+.logo-txt{font-size:1.2rem;font-weight:800;color:#fff;letter-spacing:-.4px}
+.logo-txt span{color:var(--g)}
+nav{display:flex;align-items:center;gap:1.1rem}
+nav a{color:rgba(255,255,255,.65);text-decoration:none;font-size:.875rem;font-weight:500;transition:var(--tr)}
+nav a:hover{color:#fff}
+
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;gap:.45rem;padding:.65rem 1.4rem;border-radius:var(--rs);font-size:.875rem;font-weight:700;cursor:pointer;text-decoration:none;transition:var(--tr);border:none;font-family:inherit}
+.btn-green{background:linear-gradient(135deg,var(--g),var(--gd));color:#fff}
+.btn-green:hover{transform:translateY(-2px);box-shadow:0 6px 22px rgba(0,200,83,.38)}
+.btn-lg{padding:.9rem 2.2rem;font-size:1rem;border-radius:var(--rs)}
+.btn-ghost{background:transparent;color:#fff;border:2px solid rgba(255,255,255,.32)}
+.btn-ghost:hover{background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.6)}
+.btn-white{background:#fff;color:var(--gd)}
+.btn-white:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,.18)}
+
+/* ── HERO ── */
+.hero{min-height:100vh;background:linear-gradient(140deg,#071210 0%,#0D3B1E 48%,#0A2218 100%);display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:3.5rem;padding:8rem 5rem 5rem;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;width:640px;height:640px;border-radius:50%;background:radial-gradient(circle,rgba(0,200,83,.1) 0%,transparent 70%);top:50%;left:36%;transform:translate(-50%,-50%);pointer-events:none}
+.badge{display:inline-flex;align-items:center;gap:.4rem;padding:.35rem .95rem;background:rgba(0,200,83,.13);border:1px solid rgba(0,200,83,.28);border-radius:999px;color:var(--g);font-size:.75rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:1.4rem}
+.hero h1{font-size:clamp(2rem,3.8vw,3.3rem);font-weight:900;color:#fff;line-height:1.1;letter-spacing:-1.5px;margin-bottom:1.4rem}
+.hero h1 em{color:var(--g);font-style:normal}
+.hero p{font-size:1.05rem;color:rgba(255,255,255,.68);line-height:1.75;margin-bottom:2.4rem;max-width:460px}
+.hero-ctas{display:flex;gap:.9rem;flex-wrap:wrap;margin-bottom:2.8rem}
+.trust{display:flex;gap:1.2rem;flex-wrap:wrap}
+.trust-i{display:flex;align-items:center;gap:.38rem;color:rgba(255,255,255,.58);font-size:.8rem}
+.trust-i svg{color:var(--g)}
+
+/* ── MOCKUP ── */
+.mockup{position:relative}
+.mock-win{background:rgba(255,255,255,.035);border:1px solid rgba(0,200,83,.18);border-radius:15px;overflow:hidden;box-shadow:0 30px 70px rgba(0,0,0,.38),0 0 50px rgba(0,200,83,.08)}
+.mock-bar{background:rgba(0,200,83,.1);padding:.7rem 1.1rem;display:flex;align-items:center;gap:.45rem;border-bottom:1px solid rgba(0,200,83,.08)}
+.dot{width:9px;height:9px;border-radius:50%}
+.mock-title{color:rgba(255,255,255,.5);font-size:.73rem;font-weight:600;margin:0 auto}
+.mock-body{padding:1.1rem}
+.mock-row{display:flex;align-items:center;gap:.7rem;padding:.55rem .7rem;border-radius:8px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.05);margin-bottom:.45rem}
+.av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.72rem;flex-shrink:0}
+.mi{flex:1}
+.mn{color:#fff;font-size:.74rem;font-weight:600}
+.md{color:rgba(255,255,255,.38);font-size:.64rem}
+.sc{padding:.18rem .55rem;border-radius:999px;font-size:.64rem;font-weight:700}
+.sh{background:rgba(0,200,83,.18);color:var(--g);border:1px solid rgba(0,200,83,.28)}
+.sw{background:rgba(243,156,18,.18);color:#F39C12;border:1px solid rgba(243,156,18,.28)}
+.mwa{color:#25D366;font-size:.72rem;display:flex;align-items:center;gap:3px}
+.mock-stats{display:grid;grid-template-columns:1fr 1fr;gap:.45rem;margin-top:.7rem}
+.msc{background:rgba(0,200,83,.07);border:1px solid rgba(0,200,83,.14);border-radius:8px;padding:.55rem;text-align:center}
+.msn{color:var(--g);font-size:1rem;font-weight:800}
+.msl{color:rgba(255,255,255,.38);font-size:.62rem}
+
+/* ── STATS ── */
+.stats{background:#fff;padding:4rem 5rem;border-bottom:1px solid var(--border)}
+.stats-g{display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem;max-width:1060px;margin:0 auto}
+.stat{text-align:center;padding:1.8rem 1.2rem;border-radius:var(--r);background:var(--bg);border:1px solid var(--border);transition:var(--tr)}
+.stat:hover{transform:translateY(-4px);box-shadow:var(--sh);border-color:var(--g)}
+.stat-n{font-size:2.3rem;font-weight:900;color:var(--g);line-height:1;margin-bottom:.4rem}
+.stat-l{font-size:.875rem;color:var(--muted);font-weight:500}
+
+/* ── SHARED SECTION ── */
+.sec{padding:5.5rem 5rem}
+.sec-alt{background:var(--bg)}
+.sec-dark{background:linear-gradient(140deg,#071210,#0D3B1E,#071C0E);position:relative;overflow:hidden}
+.sec-dark::before{content:'';position:absolute;width:500px;height:500px;border-radius:50%;background:radial-gradient(circle,rgba(0,200,83,.09) 0%,transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%)}
+.lbl{display:inline-flex;align-items:center;gap:.4rem;padding:.28rem .85rem;background:var(--gl);color:var(--gd);border-radius:999px;font-size:.72rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:.9rem}
+.lbl-dark{background:rgba(0,200,83,.13);color:var(--g)}
+.sec-h{font-size:clamp(1.7rem,2.8vw,2.5rem);font-weight:900;color:var(--text);letter-spacing:-1px;line-height:1.15;margin-bottom:.9rem}
+.sec-dark .sec-h{color:#fff}
+.sec-sub{font-size:1rem;color:var(--muted);max-width:540px;line-height:1.72;margin-bottom:2.8rem}
+.tc{text-align:center}
+.mxc{margin-left:auto;margin-right:auto}
+
+/* ── PAIN ── */
+.pain-g{display:grid;grid-template-columns:1fr 1fr;gap:3.5rem;align-items:center;max-width:1060px;margin:0 auto}
+.pain-list{list-style:none}
+.pain-li{display:flex;align-items:flex-start;gap:.9rem;padding:1.1rem;border-radius:var(--rs);background:#fff;border:1px solid var(--border);margin-bottom:.85rem}
+.pain-em{font-size:1.35rem;flex-shrink:0;margin-top:2px}
+.pain-t strong{display:block;font-size:.92rem;margin-bottom:.22rem}
+.pain-t span{font-size:.83rem;color:var(--muted)}
+.sol-box{background:linear-gradient(135deg,#0D3B1E,#1A4D2E);border-radius:var(--r);padding:2.3rem;color:#fff;position:relative;overflow:hidden}
+.sol-box::before{content:'';position:absolute;top:-40px;right:-40px;width:160px;height:160px;border-radius:50%;background:rgba(0,200,83,.08)}
+.sol-box h3{font-size:1.4rem;font-weight:800;margin-bottom:.9rem}
+.sol-box p{color:rgba(255,255,255,.62);font-size:.875rem;margin-bottom:1.3rem;line-height:1.72}
+.sol-item{display:flex;align-items:center;gap:.7rem;padding:.65rem 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:.9rem}
+.sol-item:last-child{border-bottom:none}
+.sol-item .ck{color:var(--g);flex-shrink:0}
+
+/* ── HOW IT WORKS ── */
+.how-g{display:grid;grid-template-columns:repeat(3,1fr);gap:1.8rem;max-width:940px;margin:0 auto;position:relative}
+.how-g::before{content:'';position:absolute;top:38px;left:18%;right:18%;height:2px;background:linear-gradient(90deg,var(--g),var(--gd));opacity:.25}
+.how-card{text-align:center}
+.how-step{width:76px;height:76px;border-radius:50%;background:linear-gradient(135deg,var(--g),var(--gd));display:flex;align-items:center;justify-content:center;margin:0 auto 1.4rem;position:relative;box-shadow:0 8px 28px rgba(0,200,83,.3);font-size:1.7rem}
+.how-num{position:absolute;top:-5px;right:-5px;width:22px;height:22px;border-radius:50%;background:#fff;color:var(--gd);font-size:.68rem;font-weight:800;display:flex;align-items:center;justify-content:center;border:2px solid var(--g)}
+.how-h{font-size:1.02rem;font-weight:700;margin-bottom:.45rem}
+.how-p{font-size:.85rem;color:var(--muted);line-height:1.65}
+
+/* ── FEATURES ── */
+.feat-g{display:grid;grid-template-columns:repeat(3,1fr);gap:1.3rem;max-width:1060px;margin:0 auto}
+.feat{background:#fff;border-radius:var(--r);padding:1.8rem;border:1px solid var(--border);transition:var(--tr)}
+.feat:hover{transform:translateY(-4px);box-shadow:var(--sh);border-color:var(--g)}
+.feat-ic{width:50px;height:50px;border-radius:13px;background:var(--gl);display:flex;align-items:center;justify-content:center;margin-bottom:1.1rem;font-size:1.4rem}
+.feat h3{font-size:.97rem;font-weight:700;margin-bottom:.42rem}
+.feat p{font-size:.845rem;color:var(--muted);line-height:1.65}
+
+/* ── NICHES ── */
+.niche-g{display:grid;grid-template-columns:repeat(5,1fr);gap:.85rem;max-width:1060px;margin:0 auto}
+.niche{display:flex;flex-direction:column;align-items:center;gap:.5rem;padding:1.1rem .7rem;border-radius:var(--rs);background:var(--bg);border:2px solid transparent;transition:var(--tr);text-align:center;cursor:default}
+.niche:hover{border-color:var(--g);background:var(--gl);transform:translateY(-3px)}
+.niche-em{font-size:1.7rem}
+.niche-n{font-size:.78rem;font-weight:600}
+
+/* ── WHY ── */
+.why-g{display:grid;grid-template-columns:repeat(3,1fr);gap:1.8rem;max-width:960px;margin:0 auto;position:relative}
+.why-card{text-align:center;padding:2.3rem 1.4rem;border-radius:var(--r);background:rgba(255,255,255,.045);border:1px solid rgba(0,200,83,.18);transition:var(--tr)}
+.why-card:hover{background:rgba(0,200,83,.07);border-color:rgba(0,200,83,.38)}
+.why-em{font-size:2.3rem;margin-bottom:1.1rem}
+.why-h{font-size:1.1rem;font-weight:800;color:#fff;margin-bottom:.65rem}
+.why-p{font-size:.855rem;color:rgba(255,255,255,.58);line-height:1.7}
+
+/* ── TESTIMONIALS ── */
+.test-g{display:grid;grid-template-columns:repeat(3,1fr);gap:1.3rem;max-width:1060px;margin:0 auto}
+.test{background:#fff;border-radius:var(--r);padding:1.8rem;border:1px solid var(--border);transition:var(--tr)}
+.test:hover{box-shadow:var(--sh);border-color:var(--g)}
+.stars{color:var(--g);font-size:.85rem;margin-bottom:.9rem;letter-spacing:1px}
+.test q{font-size:.9rem;color:var(--muted);line-height:1.72;font-style:italic;display:block;margin-bottom:1.4rem}
+.test-au{display:flex;align-items:center;gap:.7rem}
+.av-lg{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:.95rem}
+.au-name{font-size:.875rem;font-weight:700}
+.au-role{font-size:.76rem;color:var(--muted)}
+
+/* ── CTA BANNER ── */
+.cta-sec{padding:5.5rem 5rem;background:linear-gradient(135deg,var(--g),var(--gd));text-align:center;position:relative;overflow:hidden}
+.cta-sec::before{content:'';position:absolute;top:-70px;right:-70px;width:260px;height:260px;border-radius:50%;background:rgba(255,255,255,.07)}
+.cta-sec::after{content:'';position:absolute;bottom:-55px;left:-55px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.05)}
+.cta-badge{display:inline-block;padding:.28rem .85rem;background:rgba(255,255,255,.18);border-radius:999px;font-size:.72rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#fff;margin-bottom:1.3rem}
+.cta-sec h2{font-size:clamp(1.7rem,3vw,2.7rem);font-weight:900;color:#fff;letter-spacing:-1px;margin-bottom:.9rem;position:relative}
+.cta-sec p{font-size:1rem;color:rgba(255,255,255,.83);margin-bottom:2.3rem;max-width:480px;margin-left:auto;margin-right:auto}
+
+/* ── FAQ ── */
+.faq-list{max-width:680px;margin:0 auto}
+.faq-item{border:1px solid var(--border);border-radius:var(--rs);margin-bottom:.65rem;overflow:hidden}
+.faq-q{width:100%;padding:1.1rem 1.35rem;display:flex;justify-content:space-between;align-items:center;background:none;border:none;cursor:pointer;text-align:left;font-size:.92rem;font-weight:600;color:var(--text);transition:var(--tr);font-family:inherit}
+.faq-q:hover,.faq-q.open{background:var(--gl)}
+.faq-q.open{color:var(--gd)}
+.faq-icon{transition:transform .3s ease;flex-shrink:0;color:var(--g)}
+.faq-q.open .faq-icon{transform:rotate(180deg)}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .35s ease}
+.faq-a.open{max-height:260px}
+.faq-inner{padding:0 1.35rem 1.1rem;font-size:.875rem;color:var(--muted);line-height:1.72}
+
+/* ── FOOTER ── */
+.ft{padding:2.5rem 5rem;background:#071210;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.9rem}
+.ft-copy{color:rgba(255,255,255,.42);font-size:.82rem}
+.ft-links{display:flex;gap:1.4rem}
+.ft-links a{color:rgba(255,255,255,.42);text-decoration:none;font-size:.82rem;transition:var(--tr)}
+.ft-links a:hover{color:var(--g)}
+
+/* ── RESPONSIVE ── */
+@media(max-width:1080px){
+  .hero{grid-template-columns:1fr;padding:7rem 3rem 4rem;text-align:center;gap:2.8rem}
+  .hero p{margin:0 auto 2.4rem}
+  .hero-ctas{justify-content:center}
+  .trust{justify-content:center}
+  .stats-g{grid-template-columns:repeat(2,1fr)}
+  .pain-g{grid-template-columns:1fr}
+  .how-g::before{display:none}
+  .feat-g{grid-template-columns:repeat(2,1fr)}
+  .niche-g{grid-template-columns:repeat(4,1fr)}
+  .why-g,.test-g{grid-template-columns:1fr}
+}
+@media(max-width:680px){
+  .hd{padding:.75rem 1.4rem}
+  nav a{display:none}
+  .sec,.stats,.cta-sec,.ft{padding-left:1.4rem;padding-right:1.4rem}
+  .stats-g,.feat-g{grid-template-columns:1fr}
+  .niche-g{grid-template-columns:repeat(3,1fr)}
+  .how-g{grid-template-columns:1fr}
+  .ft{flex-direction:column;align-items:flex-start}
+}
+</style>
 </head>
 <body>
-<div class="app-container">
 
-    <!-- Header -->
-    <header class="header">
-        <a href="landing.html" class="logo" style="text-decoration:none;color:white">
-            <svg width="32" height="32" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                    <linearGradient id="logoGrad" x1="0" y1="0" x2="34" y2="34" gradientUnits="userSpaceOnUse">
-                        <stop stop-color="#00E676"/>
-                        <stop offset="1" stop-color="#00962E"/>
-                    </linearGradient>
-                </defs>
-                <rect width="34" height="34" rx="10" fill="url(#logoGrad)"/>
-                <circle cx="17" cy="17" r="8.5" stroke="white" stroke-width="1.5" fill="none"/>
-                <circle cx="17" cy="17" r="3" fill="white"/>
-                <line x1="17" y1="5.5" x2="17" y2="10" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-                <line x1="17" y1="24" x2="17" y2="28.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-                <line x1="5.5" y1="17" x2="10" y2="17" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-                <line x1="24" y1="17" x2="28.5" y2="17" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-            <span>UltraProspec</span>
-        </a>
-        <div class="header-actions">
-            <!-- Créditos -->
-            <div class="credits-display" id="creditsDisplay" style="display:none">
-                <span class="credits-icon">⚡</span>
-                <span id="creditsCount">0</span>
-                <span class="credits-label">leads</span>
-            </div>
-            <button class="btn btn-success btn-sm" id="btnBuyCredits" onclick="openBuyModal()" style="display:none">
-                + 100 Leads — R$10
-            </button>
-            <!-- Status Instagram -->
-            <div class="login-status" id="loginStatus">
-                <span class="status-dot offline" id="statusDot"></span>
-                <span id="loginStatusText">Instagram</span>
-                <button class="btn btn-sm btn-outline" id="btnAbrirLogin">
-                    <i class="fas fa-sign-in-alt"></i> Conectar IG
-                </button>
-            </div>
-            <button class="btn btn-outline" id="btnImportar">
-                <i class="fas fa-file-import"></i> Importar
-            </button>
-            <button class="btn btn-outline" id="btnExportar" disabled>
-                <i class="fas fa-file-csv"></i> CSV
-            </button>
-            <button class="btn btn-primary" id="btnExportarPDF" disabled>
-                <i class="fas fa-file-pdf"></i> PDF
-            </button>
-        </div>
-    </header>
+<!-- ── HEADER ── -->
+<header class="hd">
+  <a href="app.html" class="logo">
+    <svg width="32" height="32" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="lg0" x1="0" y1="0" x2="34" y2="34" gradientUnits="userSpaceOnUse"><stop stop-color="#00E676"/><stop offset="1" stop-color="#00962E"/></linearGradient></defs>
+      <rect width="34" height="34" rx="10" fill="url(#lg0)"/>
+      <circle cx="17" cy="17" r="8.5" stroke="white" stroke-width="1.5" fill="none"/>
+      <circle cx="17" cy="17" r="3" fill="white"/>
+      <line x1="17" y1="5.5" x2="17" y2="10" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="17" y1="24" x2="17" y2="28.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="5.5" y1="17" x2="10" y2="17" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="24" y1="17" x2="28.5" y2="17" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <span class="logo-txt">Ultra<span>Prospec</span></span>
+  </a>
+  <nav>
+    <a href="#como-funciona">Como Funciona</a>
+    <a href="#recursos">Recursos</a>
+    <a href="#nichos">Nichos</a>
+    <a href="#faq">FAQ</a>
+    <a href="app.html" class="btn btn-green">⚡ Acessar Plataforma</a>
+  </nav>
+</header>
 
-    <!-- Main -->
-    <main class="main-content">
-
-        <!-- Sidebar -->
-        <aside class="sidebar" id="mainSidebar">
-
-            <!-- Tipo de Captura -->
-            <div class="sidebar-section">
-                <h3><i class="fas fa-crosshairs"></i> Tipo de Captura</h3>
-                <div class="capture-type-grid">
-                    <label class="capture-type-card active full-width" data-type="profile_analysis">
-                        <input type="radio" name="captureType" value="profile_analysis" checked>
-                        <i class="fas fa-chart-bar"></i>
-                        <span>Análise Completa ⭐</span>
-                        <small>Seguidores + curtidores + comentaristas em um só clique</small>
-                    </label>
-                    <label class="capture-type-card" data-type="recent_likes">
-                        <input type="radio" name="captureType" value="recent_likes">
-                        <i class="fas fa-heart"></i>
-                        <span>Curtidores Recentes</span>
-                        <small>Posts recentes de um perfil</small>
-                    </label>
-                    <label class="capture-type-card" data-type="comments">
-                        <input type="radio" name="captureType" value="comments">
-                        <i class="fas fa-comment"></i>
-                        <span>Comentaristas</span>
-                        <small>Comentaristas de um post</small>
-                    </label>
-                    <label class="capture-type-card" data-type="common_followers">
-                        <input type="radio" name="captureType" value="common_followers">
-                        <i class="fas fa-users"></i>
-                        <span>Seguidores em Comum</span>
-                        <small>Segue múltiplos perfis</small>
-                    </label>
-                    <label class="capture-type-card" data-type="followers">
-                        <input type="radio" name="captureType" value="followers">
-                        <i class="fas fa-user-plus"></i>
-                        <span>Seguidores</span>
-                        <small>Seguidores de um perfil</small>
-                    </label>
-                    <label class="capture-type-card" data-type="hashtag">
-                        <input type="radio" name="captureType" value="hashtag">
-                        <i class="fas fa-search"></i>
-                        <span>Busca por Profissional</span>
-                        <small>Encontra perfis por profissão ou nicho</small>
-                    </label>
-                    <label class="capture-type-card" data-type="likes">
-                        <input type="radio" name="captureType" value="likes">
-                        <i class="fas fa-thumbs-up"></i>
-                        <span>Curtidores</span>
-                        <small>Curtidores de um post</small>
-                    </label>
-                </div>
-            </div>
-
-            <!-- Configurações dinâmicas por tipo -->
-            <div class="sidebar-section">
-                <h3><i class="fas fa-sliders-h"></i> Configurações</h3>
-
-                <!-- profile_analysis -->
-                <div class="capture-config" id="config-profile_analysis">
-                    <div class="form-group">
-                        <label>Perfil do Concorrente</label>
-                        <input type="text" class="target-input" placeholder="@usuario ou URL do perfil">
-                    </div>
-                    <div class="form-group">
-                        <label>Posts recentes para analisar</label>
-                        <select class="posts-input">
-                            <option value="5">5 posts</option>
-                            <option value="10" selected>10 posts</option>
-                            <option value="20">20 posts</option>
-                            <option value="30">30 posts</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- recent_likes -->
-                <div class="capture-config" id="config-recent_likes" style="display:none">
-                    <div class="form-group">
-                        <label>Perfil do Instagram</label>
-                        <input type="text" class="target-input" placeholder="@usuario ou URL do perfil">
-                    </div>
-                    <div class="form-group">
-                        <label>Últimos posts a varrer</label>
-                        <select class="posts-input">
-                            <option value="5">5 posts</option>
-                            <option value="10" selected>10 posts</option>
-                            <option value="20">20 posts</option>
-                            <option value="30">30 posts</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- comments -->
-                <div class="capture-config" id="config-comments" style="display:none">
-                    <div class="form-group">
-                        <label>URL do Post</label>
-                        <input type="text" class="target-input" placeholder="https://instagram.com/p/CODIGO/">
-                    </div>
-                </div>
-
-                <!-- common_followers -->
-                <div class="capture-config" id="config-common_followers" style="display:none">
-                    <div class="form-group">
-                        <label>Perfis (separados por vírgula)</label>
-                        <textarea class="target-input" rows="3" placeholder="@perfil1, @perfil2, @perfil3"></textarea>
-                        <small class="hint">Mínimo 2 perfis. Retorna quem segue 2 ou mais.</small>
-                    </div>
-                </div>
-
-                <!-- followers -->
-                <div class="capture-config" id="config-followers" style="display:none">
-                    <div class="form-group">
-                        <label>Perfil do Instagram</label>
-                        <input type="text" class="target-input" placeholder="@usuario ou URL do perfil">
-                    </div>
-                </div>
-
-                <!-- hashtag -->
-                <div class="capture-config" id="config-hashtag" style="display:none">
-                    <div class="form-group">
-                        <label>Perfil alvo para varrer</label>
-                        <input type="text" id="hashtagProfile" placeholder="@perfil ou URL do Instagram">
-                        <small class="hint">Ex: conta de uma agência, concorrente ou comunidade do nicho.</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Profissão / Palavras-chave</label>
-                        <textarea class="target-input" rows="2" placeholder="gestor de trafego, trafego pago, google ads"></textarea>
-                        <small class="hint">Filtra só quem tem essas palavras no nome, usuário, bio ou categoria.</small>
-                    </div>
-                </div>
-
-                <!-- likes -->
-                <div class="capture-config" id="config-likes" style="display:none">
-                    <div class="form-group">
-                        <label>URL do Post</label>
-                        <input type="text" class="target-input" placeholder="https://instagram.com/p/CODIGO/">
-                    </div>
-                </div>
-
-                <!-- Configurações comuns -->
-                <div class="form-group">
-                    <label>Quantidade máxima</label>
-                    <input type="number" id="quantity" min="1" max="2000" value="200">
-                </div>
-                <div class="form-group checkbox-group">
-                    <label>
-                        <input type="checkbox" id="extractWhatsApp" checked>
-                        <span>Extrair WhatsApp da bio</span>
-                    </label>
-                </div>
-                <div class="form-group checkbox-group">
-                    <label>
-                        <input type="checkbox" id="extractEmail" checked>
-                        <span>Extrair email da bio</span>
-                    </label>
-                </div>
-            </div>
-
-            <!-- Segmentação -->
-            <div class="sidebar-section">
-                <h3><i class="fas fa-filter"></i> Segmentação</h3>
-                <div class="form-group">
-                    <label>Perfil do Lead</label>
-                    <select id="segmentType">
-                        <option value="all">Todos os perfis</option>
-                        <option value="b2c">B2C — Pessoa física</option>
-                        <option value="b2b">B2B — Conta empresarial</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Cidade / Região</label>
-                    <input type="text" id="segmentCity" placeholder="Ex: São Paulo">
-                    <small class="hint">Filtra por cidade configurada no perfil</small>
-                </div>
-                <div class="form-group checkbox-group">
-                    <label>
-                        <input type="checkbox" id="segmentActive">
-                        <span>Só contas ativas (tem posts)</span>
-                    </label>
-                </div>
-                <div class="form-group checkbox-group">
-                    <label>
-                        <input type="checkbox" id="segmentReachable">
-                        <span>Só com contato (WhatsApp ou email)</span>
-                    </label>
-                </div>
-            </div>
-
-            <button class="btn btn-success btn-block" id="btnIniciarCaptura">
-                <i class="fas fa-play"></i> Iniciar Captura
-            </button>
-            <button class="btn btn-danger btn-block" id="btnPararCaptura" style="display:none">
-                <i class="fas fa-stop"></i> Parar Captura
-            </button>
-        </aside>
-
-        <!-- Content -->
-        <div class="content">
-
-            <!-- Status Bar -->
-            <div class="status-bar">
-                <div class="status-item">
-                    <i class="fas fa-database"></i>
-                    <span>Total:</span>
-                    <strong id="leadCount">0</strong>
-                </div>
-                <div class="status-item">
-                    <i class="fas fa-fire"></i>
-                    <span>Quentes:</span>
-                    <strong id="hotCount">0</strong>
-                </div>
-                <div class="status-item">
-                    <i class="fas fa-clock"></i>
-                    <span>Tempo:</span>
-                    <strong id="elapsedTime">00:00</strong>
-                </div>
-                <div class="status-item">
-                    <i class="fas fa-circle" id="statusDotCapture"></i>
-                    <span id="captureStatusText">Aguardando</span>
-                </div>
-            </div>
-
-            <!-- Progress -->
-            <div class="progress-container" id="progressContainer" style="display:none">
-                <div class="progress-info">
-                    <span id="progressText">Capturando...</span>
-                    <span id="progressPercent">0%</span>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill"></div>
-                </div>
-            </div>
-
-            <!-- Filters -->
-            <div class="filter-bar">
-                <div class="filter-group">
-                    <button class="filter-btn active" data-filter="all">Todos</button>
-                    <button class="filter-btn" data-filter="hot">🔥 Quentes</button>
-                    <button class="filter-btn" data-filter="warm">🌡️ Mornos</button>
-                    <button class="filter-btn" data-filter="cold">❄️ Frios</button>
-                </div>
-                <div class="filter-group">
-                    <label class="filter-check">
-                        <input type="checkbox" id="filterWhatsApp"> Só com WhatsApp
-                    </label>
-                    <label class="filter-check">
-                        <input type="checkbox" id="filterEmail"> Só com Email
-                    </label>
-                    <label class="filter-check">
-                        <input type="checkbox" id="filterPublic"> Só públicos
-                    </label>
-                </div>
-                <div class="filter-group">
-                    <input type="text" id="filterSearch" placeholder="Buscar por usuário ou nome...">
-                </div>
-            </div>
-
-            <!-- Leads Table -->
-            <div class="results-section">
-                <div class="results-header">
-                    <h2><i class="fas fa-users"></i> Leads <span id="filteredCount" class="badge-count"></span></h2>
-                    <div class="results-actions">
-                        <button class="btn btn-sm btn-outline" id="btnSelecionarTodos">
-                            <i class="fas fa-check-double"></i> Selecionar Todos
-                        </button>
-                        <button class="btn btn-sm btn-outline" id="btnLimparSelecao">
-                            <i class="fas fa-times"></i> Limpar
-                        </button>
-                        <button class="btn btn-sm btn-danger" id="btnExcluirSelecionados">
-                            <i class="fas fa-trash"></i> Excluir
-                        </button>
-                    </div>
-                </div>
-
-                <div class="table-container">
-                    <table class="results-table" id="resultsTable">
-                        <thead>
-                            <tr>
-                                <th class="col-check"><input type="checkbox" id="checkAll"></th>
-                                <th class="col-foto">Foto</th>
-                                <th class="col-user">Usuário</th>
-                                <th class="col-score">Score</th>
-                                <th class="col-why">Por que quente</th>
-                                <th class="col-whatsapp">WhatsApp</th>
-                                <th class="col-email">Email</th>
-                                <th class="col-bio">Bio</th>
-                                <th class="col-actions">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody id="resultsBody">
-                            <tr class="empty-row" id="emptyRow">
-                                <td colspan="10">
-                                    <div class="empty-state">
-                                        <i class="fas fa-crosshairs"></i>
-                                        <p>Nenhum lead capturado ainda</p>
-                                        <small>Selecione um tipo de captura e clique em Iniciar</small>
-                                    </div>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </main>
-</div>
-
-<!-- Login Modal -->
-<div class="modal" id="loginModal">
-    <div class="modal-content modal-sm">
-        <div class="modal-header">
-            <h2><i class="fab fa-instagram"></i> Login no Instagram</h2>
-            <button class="modal-close" id="closeLoginModal">&times;</button>
-        </div>
-        <div class="modal-body">
-
-            <!-- Aviso conta secundária -->
-            <div style="background:rgba(243,156,18,.12);border:1px solid rgba(243,156,18,.4);border-radius:8px;padding:.85rem 1rem;margin-bottom:1.25rem;display:flex;gap:.6rem;align-items:flex-start">
-                <span style="font-size:1.1rem;flex-shrink:0">⚠️</span>
-                <div>
-                    <strong style="color:#F39C12;font-size:.83rem;display:block;margin-bottom:.2rem">Use uma conta secundária ou fake</strong>
-                    <span style="color:rgba(255,255,255,.6);font-size:.78rem;line-height:1.5">Nunca conecte sua conta principal. Crie uma conta nova no Instagram só para usar aqui — isso protege o seu perfil pessoal.</span>
-                </div>
-            </div>
-
-            <div class="login-tabs">
-                <button class="login-tab active" data-tab="cookie"><i class="fas fa-cookie-bite"></i> Session ID</button>
-                <button class="login-tab" data-tab="password"><i class="fas fa-key"></i> Senha</button>
-            </div>
-
-            <div id="tabCookie">
-                <p class="login-info"><i class="fas fa-info-circle"></i> Mais confiável. Copie os cookies do seu browser.</p>
-                <ol class="cookie-steps">
-                    <li>Abra <strong>instagram.com</strong> no Chrome logado</li>
-                    <li><strong>F12</strong> → Application → Cookies → instagram.com</li>
-                    <li>Copie os valores de <strong>sessionid</strong>, <strong>csrftoken</strong> e <strong>ds_user_id</strong></li>
-                </ol>
-                <div class="form-group">
-                    <label>Seu @usuário</label>
-                    <input type="text" id="igCookieUsername" placeholder="seu_usuario" autocomplete="off">
-                </div>
-                <div class="form-group">
-                    <label>sessionid</label>
-                    <input type="text" id="igSessionId" placeholder="Cole o valor do sessionid" autocomplete="off">
-                </div>
-                <div class="form-group">
-                    <label>csrftoken</label>
-                    <input type="text" id="igCsrfToken" placeholder="Cole o valor do csrftoken" autocomplete="off">
-                </div>
-                <div class="form-group">
-                    <label>ds_user_id</label>
-                    <input type="text" id="igDsUserId" placeholder="Cole o valor do ds_user_id" autocomplete="off">
-                </div>
-            </div>
-
-            <div id="tabPassword" style="display:none">
-                <p class="login-info"><i class="fas fa-info-circle"></i> Use uma conta secundária.</p>
-                <div id="loginStep1">
-                    <div class="form-group">
-                        <label>Usuário</label>
-                        <input type="text" id="igUsername" placeholder="seu_usuario" autocomplete="off">
-                    </div>
-                    <div class="form-group">
-                        <label>Senha</label>
-                        <input type="password" id="igPassword" placeholder="••••••••" autocomplete="off">
-                    </div>
-                </div>
-                <div id="loginStep2" style="display:none">
-                    <p class="login-info"><i class="fas fa-shield-alt"></i> Código enviado pelo Instagram.</p>
-                    <div class="form-group">
-                        <label>Código de Verificação</label>
-                        <input type="text" id="igCode" placeholder="123456" maxlength="8" style="letter-spacing:4px;font-size:1.3rem;text-align:center">
-                    </div>
-                </div>
-            </div>
-
-            <p class="login-error" id="loginError" style="display:none"></p>
-        </div>
-        <div class="modal-footer">
-            <button class="btn btn-outline" id="btnCancelLogin">Cancelar</button>
-            <button class="btn btn-success" id="btnConfirmLogin">
-                <i class="fas fa-sign-in-alt"></i> Entrar
-            </button>
-        </div>
+<!-- ── HERO ── -->
+<section class="hero">
+  <div>
+    <div class="badge">⚡ Novo &middot; Leads qualificados em minutos</div>
+    <h1>Leads <em>Ultra Qualificados</em> do Instagram Para Qualquer Nicho</h1>
+    <p>Capture contatos de pessoas que <strong style="color:#fff">já demonstraram interesse real</strong> no que você vende — com WhatsApp e email extraídos automaticamente, score de qualificação e segmentação precisa para cada tipo de negócio.</p>
+    <div class="hero-ctas">
+      <a href="app.html" class="btn btn-green btn-lg">🚀 Começar Agora — Grátis</a>
+      <a href="#como-funciona" class="btn btn-ghost btn-lg">▶ Ver Como Funciona</a>
     </div>
-</div>
-
-<!-- Import Modal -->
-<div class="modal" id="importModal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h2><i class="fas fa-file-import"></i> Importar Dados</h2>
-            <button class="modal-close" id="closeImportModal">&times;</button>
-        </div>
-        <div class="modal-body">
-            <div class="import-area" id="importArea">
-                <i class="fas fa-cloud-upload-alt"></i>
-                <p>Arraste um arquivo ou clique para selecionar</p>
-                <small>Formatos: CSV, Excel (.xlsx, .xls)</small>
-                <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" hidden>
-            </div>
-            <div class="import-preview" id="importPreview" style="display:none">
-                <h4>Preview:</h4>
-                <div class="preview-table-container">
-                    <table class="preview-table" id="previewTable"><thead></thead><tbody></tbody></table>
-                </div>
-                <p class="import-summary" id="importSummary"></p>
-            </div>
-        </div>
-        <div class="modal-footer">
-            <button class="btn btn-outline" id="btnCancelImport">Cancelar</button>
-            <button class="btn btn-primary" id="btnConfirmImport" disabled>Importar</button>
-        </div>
+    <div class="trust">
+      <span class="trust-i">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+        Todos os nichos
+      </span>
+      <span class="trust-i">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+        WhatsApp automático
+      </span>
+      <span class="trust-i">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+        Score de qualificação IA
+      </span>
     </div>
-</div>
+  </div>
 
-<div class="toast-container" id="toastContainer"></div>
-
-<!-- ── MODAL: Comprar Leads ── -->
-<div class="modal" id="buyModal">
-    <div class="modal-content modal-sm">
-        <div class="modal-header">
-            <h2>⚡ Comprar 100 Leads</h2>
-            <button class="modal-close" onclick="closeBuyModal()">&times;</button>
+  <div class="mockup">
+    <div class="mock-win">
+      <div class="mock-bar">
+        <div class="dot" style="background:#FF5F57"></div>
+        <div class="dot" style="background:#FEBC2E"></div>
+        <div class="dot" style="background:#28C840"></div>
+        <span class="mock-title">🎯 UltraProspec · 247 leads</span>
+      </div>
+      <div class="mock-body">
+        <div class="mock-row">
+          <div class="av" style="background:linear-gradient(135deg,#00C853,#00962E)">C</div>
+          <div class="mi"><div class="mn">@clinica_santos</div><div class="md">Clínica Odontológica · São Paulo</div></div>
+          <span class="sc sh">🔥 92pts</span>
+          <span class="mwa">📱 +55</span>
         </div>
-        <div class="modal-body" style="text-align:center;padding:1.5rem 1.5rem 1rem">
-            <div style="font-size:3rem;font-weight:900;color:var(--primary);line-height:1">R$10</div>
-            <div style="color:rgba(255,255,255,.5);font-size:.85rem;margin:.4rem 0 1.25rem">100 leads qualificados · R$0,10 por lead</div>
-            <ul style="list-style:none;text-align:left;margin-bottom:1.5rem">
-                <li style="color:rgba(255,255,255,.7);font-size:.875rem;padding:.35rem 0;display:flex;align-items:center;gap:.6rem"><span style="color:var(--primary)">✓</span> WhatsApp e email extraídos automaticamente</li>
-                <li style="color:rgba(255,255,255,.7);font-size:.875rem;padding:.35rem 0;display:flex;align-items:center;gap:.6rem"><span style="color:var(--primary)">✓</span> Score de qualificação por comportamento</li>
-                <li style="color:rgba(255,255,255,.7);font-size:.875rem;padding:.35rem 0;display:flex;align-items:center;gap:.6rem"><span style="color:var(--primary)">✓</span> Exportação PDF e CSV profissional</li>
-                <li style="color:rgba(255,255,255,.7);font-size:.875rem;padding:.35rem 0;display:flex;align-items:center;gap:.6rem"><span style="color:var(--primary)">✓</span> Todos os nichos atendidos</li>
-            </ul>
-            <p id="buyError" style="display:none;color:#ff6b6b;font-size:.83rem;margin-bottom:.75rem"></p>
+        <div class="mock-row">
+          <div class="av" style="background:linear-gradient(135deg,#F39C12,#E67E22)">M</div>
+          <div class="mi"><div class="mn">@moda_petra</div><div class="md">Loja de Moda · Rio de Janeiro</div></div>
+          <span class="sc sh">🔥 88pts</span>
+          <span class="mwa">📱 +55</span>
         </div>
-        <div class="modal-footer" style="flex-direction:column;gap:.75rem">
-            <button class="btn btn-success btn-block" id="btnCheckout" onclick="goToCheckout()" style="justify-content:center;font-size:1rem;padding:.85rem">
-                <i class="fas fa-credit-card"></i> Pagar R$10 com Stripe
-            </button>
-            <button class="btn btn-outline btn-block" onclick="closeBuyModal()" style="justify-content:center">Cancelar</button>
-            <button onclick="simulatePayment()" style="background:none;border:none;color:rgba(255,255,255,.25);font-size:.72rem;cursor:pointer;padding:.25rem;font-family:inherit">
-                [modo teste: simular compra]
-            </button>
+        <div class="mock-row">
+          <div class="av" style="background:linear-gradient(135deg,#3498DB,#2980B9)">I</div>
+          <div class="mi"><div class="mn">@imoveis_norte</div><div class="md">Imobiliária · Brasília</div></div>
+          <span class="sc sw">🌡 74pts</span>
+          <span class="mwa" style="color:#00C853">✉️ email</span>
         </div>
+        <div class="mock-row">
+          <div class="av" style="background:linear-gradient(135deg,#E74C3C,#C0392B)">F</div>
+          <div class="mi"><div class="mn">@fitness_prime</div><div class="md">Academia · Curitiba</div></div>
+          <span class="sc sh">🔥 81pts</span>
+          <span class="mwa">📱 +55</span>
+        </div>
+        <div class="mock-stats">
+          <div class="msc"><div class="msn">247</div><div class="msl">Total de Leads</div></div>
+          <div class="msc"><div class="msn">183</div><div class="msl">🔥 Leads Quentes</div></div>
+        </div>
+      </div>
     </div>
-</div>
+  </div>
+</section>
 
-<script src="app.js"></script>
+<!-- ── STATS ── -->
+<section class="stats">
+  <div class="stats-g">
+    <div class="stat"><div class="stat-n">200k+</div><div class="stat-l">👥 Leads capturados</div></div>
+    <div class="stat"><div class="stat-n">100+</div><div class="stat-l">🏪 Nichos atendidos</div></div>
+    <div class="stat"><div class="stat-n">78%</div><div class="stat-l">📱 Leads com WhatsApp</div></div>
+    <div class="stat"><div class="stat-n">&lt;5min</div><div class="stat-l">⏱️ Para primeiros leads</div></div>
+  </div>
+</section>
+
+<!-- ── DOR + SOLUÇÃO ── -->
+<section class="sec sec-alt">
+  <div class="pain-g">
+    <div>
+      <span class="lbl">❌ O problema</span>
+      <h2 class="sec-h">Listas frias<br>não convertem.</h2>
+      <p class="sec-sub" style="margin-bottom:1.8rem">Comprar banco de dados aleatórios é jogar dinheiro fora. As pessoas não têm interesse no que você vende.</p>
+      <ul class="pain-list">
+        <li class="pain-li">
+          <span class="pain-em">😤</span>
+          <div class="pain-t"><strong>Taxas de resposta ridículas</strong><span>Listas compradas chegam a menos de 2% de resposta. Horas perdidas sem retorno.</span></div>
+        </li>
+        <li class="pain-li">
+          <span class="pain-em">💸</span>
+          <div class="pain-t"><strong>Tráfego pago caro e incerto</strong><span>Gastar com anúncios para alcançar quem talvez tenha interesse é ineficiente e caro.</span></div>
+        </li>
+        <li class="pain-li">
+          <span class="pain-em">⏳</span>
+          <div class="pain-t"><strong>Prospecção manual que não escala</strong><span>Ficar horas pesquisando perfil por perfil no Instagram para encontrar potenciais clientes.</span></div>
+        </li>
+      </ul>
+    </div>
+    <div>
+      <div class="sol-box">
+        <span class="lbl lbl-dark" style="margin-bottom:1.1rem">✅ A solução</span>
+        <h3>Leads que já estão prontos para comprar.</h3>
+        <p>A UltraProspec captura pessoas que já interagiram com perfis do seu nicho — curtindo, comentando, seguindo. Elas já sabem que precisam do que você vende.</p>
+        <div class="sol-item"><span class="ck">🔥</span><span>Score de qualificação automático por comportamento real</span></div>
+        <div class="sol-item"><span class="ck">📱</span><span>WhatsApp e email extraídos direto da bio de cada perfil</span></div>
+        <div class="sol-item"><span class="ck">🎯</span><span>Segmentação B2B ou B2C, por cidade e nível de interesse</span></div>
+        <div class="sol-item"><span class="ck">⚡</span><span>Centenas de leads em minutos, não em semanas</span></div>
+        <div class="sol-item"><span class="ck">📄</span><span>Relatório profissional em PDF pronto para usar</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── COMO FUNCIONA ── -->
+<section class="sec tc" id="como-funciona">
+  <span class="lbl">🗺️ Passo a passo</span>
+  <h2 class="sec-h mxc">Como funciona</h2>
+  <p class="sec-sub mxc tc">Em menos de 5 minutos você já tem leads qualificados prontos para abordagem.</p>
+  <div class="how-g">
+    <div class="how-card">
+      <div class="how-step"><div class="how-num">1</div>🎯</div>
+      <h3 class="how-h">Defina seu alvo</h3>
+      <p class="how-p">Escolha o perfil do concorrente ou do seu nicho. Defina a profissão ou palavra-chave do seu mercado.</p>
+    </div>
+    <div class="how-card">
+      <div class="how-step"><div class="how-num">2</div>⚙️</div>
+      <h3 class="how-h">A IA trabalha</h3>
+      <p class="how-p">Nossa engine varre seguidores, curtidores e comentaristas, extrai contatos e calcula o score de cada lead automaticamente.</p>
+    </div>
+    <div class="how-card">
+      <div class="how-step"><div class="how-num">3</div>💰</div>
+      <h3 class="how-h">Converta em clientes</h3>
+      <p class="how-p">Receba a lista ranqueada dos mais quentes para os mais frios. Aborde pelo WhatsApp ou email com contexto real.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── RECURSOS ── -->
+<section class="sec sec-alt tc" id="recursos">
+  <span class="lbl">⭐ Recursos</span>
+  <h2 class="sec-h mxc">Tudo que você precisa<br>para prospectar com inteligência</h2>
+  <p class="sec-sub mxc tc">Ferramentas poderosas reunidas em uma plataforma simples e eficiente.</p>
+  <div class="feat-g">
+    <div class="feat">
+      <div class="feat-ic">📊</div>
+      <h3>Análise Completa de Perfil</h3>
+      <p>Varre seguidores, curtidores e comentaristas de qualquer concorrente em uma única operação. Pondera recência de cada interação para score preciso.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-ic">🔍</div>
+      <h3>Busca por Profissão e Nicho</h3>
+      <p>Encontre exatamente quem você precisa: filtre por profissão, palavras-chave na bio, categoria da conta. Médicos, advogados, gestores, donos de loja — qualquer nicho.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-ic">🔥</div>
+      <h3>Score de Qualificação Inteligente</h3>
+      <p>Cada lead recebe uma pontuação de 0 a 100 com base em comportamento real: comentou (+38pts), curtiu (+22pts), segue o perfil (+15pts), tem WhatsApp (+20pts).</p>
+    </div>
+    <div class="feat">
+      <div class="feat-ic">📱</div>
+      <h3>WhatsApp e Email Automáticos</h3>
+      <p>Extração automática de WhatsApp e email direto da bio de cada perfil. Telefones públicos e emails de contas business também são capturados.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-ic">🎛️</div>
+      <h3>Segmentação Avançada</h3>
+      <p>Filtre por B2B ou B2C, cidade, contas ativas, apenas leads com contato disponível. Exporte exatamente a lista que você quer trabalhar.</p>
+    </div>
+    <div class="feat">
+      <div class="feat-ic">📄</div>
+      <h3>Relatório PDF Profissional</h3>
+      <p>Gere relatórios prontos para entregar a clientes ou usar em reuniões — com score, contatos, motivação de qualificação e análise completa.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── NICHOS ── -->
+<section class="sec tc" id="nichos">
+  <span class="lbl">🏪 Nichos</span>
+  <h2 class="sec-h mxc">Atendemos todos os nichos</h2>
+  <p class="sec-sub mxc tc">Seja qual for o seu mercado, a UltraProspec encontra os leads certos para o seu negócio.</p>
+  <div class="niche-g">
+    <div class="niche"><div class="niche-em">🏥</div><div class="niche-n">Clínicas e Saúde</div></div>
+    <div class="niche"><div class="niche-em">🏠</div><div class="niche-n">Imobiliárias</div></div>
+    <div class="niche"><div class="niche-em">👗</div><div class="niche-n">Moda e Vestuário</div></div>
+    <div class="niche"><div class="niche-em">⚖️</div><div class="niche-n">Advocacia</div></div>
+    <div class="niche"><div class="niche-em">📚</div><div class="niche-n">Educação</div></div>
+    <div class="niche"><div class="niche-em">💪</div><div class="niche-n">Fitness e Academia</div></div>
+    <div class="niche"><div class="niche-em">🍽️</div><div class="niche-n">Restaurantes</div></div>
+    <div class="niche"><div class="niche-em">💻</div><div class="niche-n">Tecnologia</div></div>
+    <div class="niche"><div class="niche-em">📈</div><div class="niche-n">Marketing Digital</div></div>
+    <div class="niche"><div class="niche-em">🏦</div><div class="niche-n">Contabilidade</div></div>
+    <div class="niche"><div class="niche-em">🚗</div><div class="niche-n">Automotivo</div></div>
+    <div class="niche"><div class="niche-em">✈️</div><div class="niche-n">Turismo</div></div>
+    <div class="niche"><div class="niche-em">💅</div><div class="niche-n">Beleza e Estética</div></div>
+    <div class="niche"><div class="niche-em">🔨</div><div class="niche-n">Construção</div></div>
+    <div class="niche"><div class="niche-em">📦</div><div class="niche-n">E-commerce</div></div>
+    <div class="niche"><div class="niche-em">🐾</div><div class="niche-n">Pet Shop</div></div>
+    <div class="niche"><div class="niche-em">🎭</div><div class="niche-n">Eventos</div></div>
+    <div class="niche"><div class="niche-em">🌿</div><div class="niche-n">Alimentação Saudável</div></div>
+    <div class="niche"><div class="niche-em">🎓</div><div class="niche-n">Coaching e Mentoria</div></div>
+    <div class="niche"><div class="niche-em">🏢</div><div class="niche-n">Franquias</div></div>
+  </div>
+</section>
+
+<!-- ── POR QUE ── -->
+<section class="sec sec-dark tc">
+  <div style="position:relative">
+    <span class="lbl lbl-dark">🏆 Diferenciais</span>
+    <h2 class="sec-h mxc">Por que a UltraProspec<br>é diferente</h2>
+    <div class="why-g" style="margin-top:0">
+      <div class="why-card">
+        <div class="why-em">🎯</div>
+        <h3 class="why-h">Leads quentes, não listas frias</h3>
+        <p class="why-p">Cada contato foi qualificado por comportamento real no Instagram — curtidas, comentários, seguidas. São pessoas que JÁ mostraram interesse no seu mercado.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-em">⚡</div>
+        <h3 class="why-h">Contato direto na palma da mão</h3>
+        <p class="why-p">WhatsApp e email extraídos automaticamente. Você não precisa pesquisar nada — a plataforma entrega o contato direto, pronto para usar.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-em">🔬</div>
+        <h3 class="why-h">Score que prioriza seu tempo</h3>
+        <p class="why-p">Não perca tempo com leads frios. Nosso algoritmo ranqueia de 0 a 100 e você começa sempre pelos mais prontos para comprar.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── DEPOIMENTOS ── -->
+<section class="sec tc">
+  <span class="lbl">⭐ Depoimentos</span>
+  <h2 class="sec-h mxc">Quem usa, converte</h2>
+  <p class="sec-sub mxc tc" style="margin-bottom:2.5rem">Veja o que nossos usuários estão conquistando com a plataforma.</p>
+  <div class="test-g">
+    <div class="test">
+      <div class="stars">★★★★★</div>
+      <q>Em 30 minutos capturei 340 leads do meu nicho com WhatsApp. Fechei 4 contratos na primeira semana. Nunca mais vou prospectar de outra forma.</q>
+      <div class="test-au">
+        <div class="av-lg" style="background:linear-gradient(135deg,#00C853,#00962E)">R</div>
+        <div><div class="au-name">Rafael Mendonça</div><div class="au-role">Gestor de Tráfego · São Paulo</div></div>
+      </div>
+    </div>
+    <div class="test">
+      <div class="stars">★★★★★</div>
+      <q>Trabalho com clínicas odontológicas e precisava de leads B2B qualificados. A UltraProspec me trouxe 280 dentistas com WhatsApp em menos de 1 hora.</q>
+      <div class="test-au">
+        <div class="av-lg" style="background:linear-gradient(135deg,#3498DB,#2980B9)">A</div>
+        <div><div class="au-name">Ana Beatriz Costa</div><div class="au-role">Agência de Marketing · Belo Horizonte</div></div>
+      </div>
+    </div>
+    <div class="test">
+      <div class="stars">★★★★★</div>
+      <q>O score de qualificação mudou minha abordagem. Começo pelos leads quentes e minha taxa de conversão triplicou. Ferramenta essencial para quem vende.</q>
+      <div class="test-au">
+        <div class="av-lg" style="background:linear-gradient(135deg,#F39C12,#E67E22)">M</div>
+        <div><div class="au-name">Marcos Oliveira</div><div class="au-role">Consultor de Vendas · Curitiba</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA BANNER ── -->
+<section class="cta-sec">
+  <div class="cta-badge">Comece agora</div>
+  <h2>Seus próximos clientes<br>estão no Instagram.</h2>
+  <p>Acesse a plataforma, defina seu nicho e tenha centenas de leads qualificados prontos para abordagem em menos de 5 minutos.</p>
+  <a href="app.html" class="btn btn-white btn-lg">🚀 Acessar a Plataforma Agora</a>
+</section>
+
+<!-- ── FAQ ── -->
+<section class="sec tc" id="faq">
+  <span class="lbl">❓ Dúvidas</span>
+  <h2 class="sec-h mxc">Perguntas frequentes</h2>
+  <p class="sec-sub mxc tc" style="margin-bottom:2.5rem">Tudo o que você precisa saber antes de começar.</p>
+  <div class="faq-list">
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="faq(this)">
+        Como a plataforma encontra os leads?
+        <svg class="faq-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a"><div class="faq-inner">A UltraProspec analisa perfis públicos do Instagram e identifica pessoas que interagiram com contas do seu nicho — curtindo publicações, deixando comentários ou seguindo concorrentes. Isso significa que esses leads já demonstraram interesse real, antes mesmo de conhecer você.</div></div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="faq(this)">
+        Funciona para qualquer tipo de negócio?
+        <svg class="faq-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a"><div class="faq-inner">Sim. Se o seu público está no Instagram — e hoje praticamente todo nicho está — a UltraProspec funciona para você. Clínicas, imobiliárias, lojas, agências, prestadores de serviço, e-commerce, consultores, coaches, advogados. Todos os nichos são atendidos.</div></div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="faq(this)">
+        Como o score de qualificação é calculado?
+        <svg class="faq-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a"><div class="faq-inner">O algoritmo considera: comentários recentes (+38pts), curtidas (+22pts), se segue o perfil (+15pts), WhatsApp disponível (+20pts), email (+12pts), conta ativa (+8pts) e outros fatores. Quanto mais recente a interação, maior o multiplicador. Leads com 65+ pontos são classificados como 🔥 Quentes.</div></div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="faq(this)">
+        Os dados extraídos são públicos?
+        <svg class="faq-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a"><div class="faq-inner">Sim. A plataforma acessa apenas informações públicas disponíveis em perfis do Instagram — bio, nome de usuário, dados de contato que os próprios usuários escolheram tornar públicos. Não há acesso a dados privados ou senhas.</div></div>
+    </div>
+
+    <div class="faq-item">
+      <button class="faq-q" onclick="faq(this)">
+        Posso exportar os leads para outras ferramentas?
+        <svg class="faq-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a"><div class="faq-inner">Sim. Você pode exportar em CSV (compatível com Excel, Google Sheets e qualquer CRM) ou gerar um relatório PDF profissional com todas as informações de qualificação — ideal para apresentar a clientes ou usar em reuniões de vendas.</div></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer class="ft">
+  <a href="app.html" class="logo">
+    <svg width="28" height="28" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="lg2" x1="0" y1="0" x2="34" y2="34" gradientUnits="userSpaceOnUse"><stop stop-color="#00E676"/><stop offset="1" stop-color="#00962E"/></linearGradient></defs>
+      <rect width="34" height="34" rx="10" fill="url(#lg2)"/>
+      <circle cx="17" cy="17" r="8.5" stroke="white" stroke-width="1.5" fill="none"/>
+      <circle cx="17" cy="17" r="3" fill="white"/>
+      <line x1="17" y1="5.5" x2="17" y2="10" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="17" y1="24" x2="17" y2="28.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="5.5" y1="17" x2="10" y2="17" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="24" y1="17" x2="28.5" y2="17" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <span class="logo-txt">Ultra<span>Prospec</span></span>
+  </a>
+  <span class="ft-copy">© 2025 UltraProspec · Todos os direitos reservados</span>
+  <div class="ft-links">
+    <a href="app.html">Plataforma</a>
+    <a href="#como-funciona">Como Funciona</a>
+    <a href="#faq">FAQ</a>
+  </div>
+</footer>
+
+<script>
+function faq(btn){
+  var a=btn.nextElementSibling,open=btn.classList.contains('open');
+  document.querySelectorAll('.faq-q').forEach(function(q){q.classList.remove('open');q.nextElementSibling.classList.remove('open')});
+  if(!open){btn.classList.add('open');a.classList.add('open')}
+}
+document.querySelectorAll('a[href^="#"]').forEach(function(a){
+  a.addEventListener('click',function(e){
+    var t=document.querySelector(a.getAttribute('href'));
+    if(t){e.preventDefault();window.scrollTo({top:t.offsetTop-72,behavior:'smooth'})}
+  });
+});
+window.addEventListener('scroll',function(){
+  document.querySelector('.hd').style.boxShadow=window.scrollY>40?'0 4px 22px rgba(0,0,0,.28)':'none';
+});
+</script>
 </body>
 </html>

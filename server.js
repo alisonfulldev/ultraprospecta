@@ -322,7 +322,7 @@ app.post('/api/payment/create', async (req, res) => {
             }],
             mode:        'payment',
             success_url: `${baseUrl}/payment-success.html?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url:  `${baseUrl}/index.html`,
+            cancel_url:  `${baseUrl}/app.html`,
             metadata:    { credits: String(PACK_CREDITS) }
         });
         res.json({ checkoutUrl: session.url });
@@ -627,6 +627,6 @@ app.get('/api/capture', async (req, res) => {
 // ============================================
 app.listen(PORT, () => {
     console.log(`\n✅ UltraProspec rodando em http://localhost:${PORT}`);
-    console.log(`   → Landing:    http://localhost:${PORT}/landing.html`);
-    console.log(`   → Plataforma: http://localhost:${PORT}/index.html\n`);
+    console.log(`   → Landing:    http://localhost:${PORT}/index.html`);
+    console.log(`   → Plataforma: http://localhost:${PORT}/app.html\n`);
 });
