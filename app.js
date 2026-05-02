@@ -1,36 +1,71 @@
 // UltraProspec - App JS
 
 // ============================================
-// Créditos — localStorage (sem banco de dados)
+// Créditos — separados por fonte (localStorage)
 // ============================================
-const CREDITS_KEY = 'up_credits';
+const CREDITS_KEY_IG   = 'up_credits_ig';
+const CREDITS_KEY_CNPJ = 'up_credits_cnpj';
 
-function getCredits()         { return parseInt(localStorage.getItem(CREDITS_KEY) || '0'); }
-function setCredits(n)        { localStorage.setItem(CREDITS_KEY, String(Math.max(0, n))); updateCreditsUI(); }
-function deductCredit()       { setCredits(getCredits() - 1); }
-function addCredits(n) {
-    const wasZero = getCredits() === 0;
-    setCredits(getCredits() + n);
-    // Aviso de uso moderado — só na primeira vez que recebe créditos
-    if (wasZero && !localStorage.getItem('up_warned')) {
-        localStorage.setItem('up_warned', '1');
-        setTimeout(() => showToast(
-            '💡 Dica: faça capturas com calma — o Instagram pode limitar perfis com muitas requisições seguidas.',
-            'warning', 9000
-        ), 600);
+// Migração do sistema antigo (chave única → por fonte)
+(function migrateLegacyCredits() {
+    const old = localStorage.getItem('up_credits');
+    if (old !== null && !localStorage.getItem('up_credits_migrated')) {
+        const n = parseInt(old) || 0;
+        if (n > 0) localStorage.setItem(CREDITS_KEY_IG, String(n));
+        localStorage.removeItem('up_credits');
+        localStorage.setItem('up_credits_migrated', '1');
+    }
+})();
+
+function getCreditsIG()    { return parseInt(localStorage.getItem(CREDITS_KEY_IG)   || '0'); }
+function getCreditsCNPJ()  { return parseInt(localStorage.getItem(CREDITS_KEY_CNPJ) || '0'); }
+function getActiveCredits(){ return state.activeSource === 'cnpj' ? getCreditsCNPJ() : getCreditsIG(); }
+
+function setCreditsIG(n)   { localStorage.setItem(CREDITS_KEY_IG,   String(Math.max(0, n))); updateCreditsUI(); }
+function setCreditsCNPJ(n) { localStorage.setItem(CREDITS_KEY_CNPJ, String(Math.max(0, n))); updateCreditsUI(); }
+function deductCredit()    {
+    if (state.activeSource === 'cnpj') setCreditsCNPJ(getCreditsCNPJ() - 1);
+    else setCreditsIG(getCreditsIG() - 1);
+}
+function addCredits(n, type) {
+    const t = type || state.activeSource || 'instagram';
+    if (t === 'cnpj') {
+        setCreditsCNPJ(getCreditsCNPJ() + n);
+    } else {
+        const wasZero = getCreditsIG() === 0;
+        setCreditsIG(getCreditsIG() + n);
+        if (wasZero && !localStorage.getItem('up_warned')) {
+            localStorage.setItem('up_warned', '1');
+            setTimeout(() => showToast(
+                '💡 Dica: faça capturas com calma — o Instagram pode limitar perfis com muitas requisições seguidas.',
+                'warning', 9000
+            ), 600);
+        }
     }
 }
 
 function updateCreditsUI() {
-    const credits = getCredits();
-    const el      = document.getElementById('creditsCount');
-    const display = document.getElementById('creditsDisplay');
-    const buyBtn  = document.getElementById('btnBuyCredits');
-    if (el)      el.textContent = credits;
-    if (display) {
-        display.style.display = 'flex';
-        display.classList.toggle('credits-low',   credits > 0 && credits <= 10);
-        display.classList.toggle('credits-empty', credits <= 0);
+    const ig   = getCreditsIG();
+    const cnpj = getCreditsCNPJ();
+    const total = ig + cnpj;
+
+    const elIG   = document.getElementById('creditsCountIG');
+    const elCNPJ = document.getElementById('creditsCountCNPJ');
+    const dispIG   = document.getElementById('creditsDisplayIG');
+    const dispCNPJ = document.getElementById('creditsDisplayCNPJ');
+    const buyBtn   = document.getElementById('btnBuyCredits');
+
+    if (elIG)   elIG.textContent   = ig;
+    if (elCNPJ) elCNPJ.textContent = cnpj;
+
+    if (dispIG) {
+        dispIG.style.display = 'flex';
+        dispIG.classList.toggle('credits-low',   ig > 0 && ig <= 10);
+        dispIG.classList.toggle('credits-empty', ig <= 0);
+    }
+    if (dispCNPJ) {
+        dispCNPJ.style.display = cnpj > 0 ? 'flex' : 'none';
+        dispCNPJ.classList.toggle('credits-low', cnpj > 0 && cnpj <= 10);
     }
     if (buyBtn) buyBtn.style.display = 'inline-flex';
 }
@@ -54,14 +89,90 @@ const state = {
     segmentType: 'all',
     segmentCity: '',
     segmentActive: false,
-    segmentReachable: false
+    segmentReachable: false,
+    activeSource: 'instagram', // 'instagram' | 'cnpj'
+    cnaeList: [],
+    selectedPackType: 'instagram'
 };
+
+// ============================================
+// Source Toggle (Instagram / CNPJ)
+// ============================================
+function setSource(source) {
+    state.activeSource = source;
+
+    document.getElementById('btnSourceIG').classList.toggle('active',   source === 'instagram');
+    document.getElementById('btnSourceCNPJ').classList.toggle('active', source === 'cnpj');
+    document.getElementById('sidebarIG').style.display   = source === 'instagram' ? '' : 'none';
+    document.getElementById('sidebarCNPJ').style.display = source === 'cnpj'      ? '' : 'none';
+
+    // Troca cabeçalho da tabela
+    document.getElementById('theadIG').style.display   = source === 'instagram' ? '' : 'none';
+    document.getElementById('theadCNPJ').style.display = source === 'cnpj'      ? '' : 'none';
+
+    // Ajusta filtros visíveis
+    const filterTemp = document.querySelector('.filter-group:first-child');
+    if (filterTemp) filterTemp.style.display = source === 'instagram' ? '' : 'none';
+
+    // Limpa leads ao trocar fonte
+    state.leads = [];
+    state.filteredLeads = [];
+    document.getElementById('resultsBody').innerHTML =
+        `<tr class="empty-row" id="emptyRow"><td colspan="9"><div class="empty-state">
+            <i class="fas fa-crosshairs"></i>
+            <p>Nenhum lead capturado ainda</p>
+            <small>Selecione um tipo de captura e clique em Iniciar</small>
+        </div></td></tr>`;
+    updateCounts();
+
+    // Pré-seleciona pack no modal
+    state.selectedPackType = source;
+}
+
+// ============================================
+// CNAE Autocomplete
+// ============================================
+async function loadCnaeList() {
+    if (state.cnaeList.length) return;
+    try {
+        const r = await fetch('/api/cnae/list');
+        state.cnaeList = await r.json();
+    } catch { state.cnaeList = []; }
+}
+
+function filterCnae(query) {
+    const dropdown = document.getElementById('cnaeDropdown');
+    if (!query || query.length < 2) { dropdown.style.display = 'none'; return; }
+    const q = query.toLowerCase();
+    const matches = state.cnaeList.filter(c =>
+        c.desc.toLowerCase().includes(q) || c.code.startsWith(q)
+    ).slice(0, 8);
+
+    if (!matches.length) { dropdown.style.display = 'none'; return; }
+    dropdown.innerHTML = matches.map(c =>
+        `<div class="cnae-item" onclick="selectCnae('${c.code}','${c.desc.replace(/'/g,"\\'")}')">
+            <strong>${c.code}</strong> — ${c.desc}
+        </div>`
+    ).join('');
+    dropdown.style.display = 'block';
+}
+
+function selectCnae(code, desc) {
+    document.getElementById('cnaeSelected').value = code;
+    document.getElementById('cnaeSearch').value   = desc;
+    document.getElementById('cnaeSelectedLabel').textContent = `Código: ${code}`;
+    document.getElementById('cnaeDropdown').style.display = 'none';
+}
+
+function cnpjUFChanged() { /* placeholder para futura busca de municípios */ }
 
 // ============================================
 // Buy Modal
 // ============================================
 function openBuyModal() {
     document.getElementById('buyError').style.display = 'none';
+    // Pré-seleciona o pack da fonte ativa
+    selectPack(state.activeSource === 'cnpj' ? 'cnpj' : 'instagram');
     document.getElementById('buyModal').classList.add('active');
 }
 
@@ -69,19 +180,34 @@ function closeBuyModal() {
     document.getElementById('buyModal').classList.remove('active');
 }
 
+function selectPack(type) {
+    state.selectedPackType = type;
+    const packIG   = document.getElementById('packIG');
+    const packCNPJ = document.getElementById('packCNPJ');
+    if (packIG && packCNPJ) {
+        packIG.style.border   = type === 'instagram' ? '2px solid var(--primary)' : '2px solid transparent';
+        packIG.style.background   = type === 'instagram' ? 'rgba(0,200,83,.06)' : 'rgba(255,255,255,.04)';
+        packCNPJ.style.border = type === 'cnpj'      ? '2px solid var(--primary)' : '2px solid transparent';
+        packCNPJ.style.background = type === 'cnpj' ? 'rgba(0,200,83,.06)' : 'rgba(255,255,255,.04)';
+    }
+}
+
 function simulatePayment() {
-    addCredits(100);
+    const type = state.selectedPackType || 'instagram';
+    const n    = type === 'cnpj' ? 50 : 100;
+    addCredits(n, type);
     closeBuyModal();
-    showToast('✅ 100 leads adicionados (modo teste)', 'success');
+    showToast(`✅ ${n} leads ${type === 'cnpj' ? 'CNPJ' : 'Instagram'} adicionados (modo teste)`, 'success');
 }
 
 async function goToCheckout() {
-    const btn = document.getElementById('btnCheckout');
+    const btn  = document.getElementById('btnCheckout');
+    const type = state.selectedPackType || 'instagram';
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Aguarde...';
     document.getElementById('buyError').style.display = 'none';
     try {
-        const res  = await fetch('/api/payment/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+        const res  = await fetch('/api/payment/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type }) });
         const data = await res.json();
         if (data.checkoutUrl) {
             window.location.href = data.checkoutUrl;
@@ -229,32 +355,27 @@ async function checkLoginStatus() {
 }
 
 function updateLoginUI(loggedIn, user) {
-    const dot      = document.getElementById('statusDot');
-    const text     = document.getElementById('loginStatusText');
-    const btn      = document.getElementById('btnAbrirLogin');
-    const sidebar  = document.getElementById('mainSidebar');
+    const dot     = document.getElementById('statusDot');
+    const text    = document.getElementById('loginStatusText');
+    const btn     = document.getElementById('btnAbrirLogin');
+    const prompt  = document.getElementById('igLoginPrompt');
 
     if (loggedIn && user) {
-        dot.className  = 'status-dot online';
+        dot.className    = 'status-dot online';
         text.textContent = `@${user.username}`;
-        btn.innerHTML  = '<i class="fas fa-sign-out-alt"></i> Sair';
-        btn.onclick    = logout;
-        sidebar.classList.remove('sidebar-locked');
+        btn.innerHTML    = '<i class="fas fa-sign-out-alt"></i> Sair';
+        btn.onclick      = logout;
+        if (prompt) prompt.style.display = 'none';
     } else {
-        dot.className  = 'status-dot offline';
+        dot.className    = 'status-dot offline';
         text.textContent = 'Não conectado';
-        btn.innerHTML  = '<i class="fas fa-sign-in-alt"></i> Login';
-        btn.onclick    = openLoginModal;
-        sidebar.classList.add('sidebar-locked');
+        btn.innerHTML    = '<i class="fas fa-sign-in-alt"></i> Login';
+        btn.onclick      = openLoginModal;
+        if (prompt) prompt.style.display = 'block';
     }
 }
 
 function openLoginModal() {
-    // Sem créditos → mostrar compra em vez do login do Instagram
-    if (getCredits() <= 0) {
-        openBuyModal();
-        return;
-    }
     loginStep = 1;
     activeLoginTab = 'cookie';
     document.getElementById('loginModal').classList.add('active');
@@ -387,8 +508,18 @@ document.querySelectorAll('input[name="captureType"]').forEach(radio => {
 // Capture
 // ============================================
 async function startCapture() {
-    if (getCredits() <= 0) {
+    if (state.activeSource === 'cnpj') { startCaptureCNPJ(); return; }
+
+    // Créditos primeiro — sem créditos abre compra imediatamente
+    if (getCreditsIG() <= 0) {
         openBuyModal();
+        return;
+    }
+
+    // Depois verifica login do Instagram
+    const igSession = loadIgSession();
+    if (!igSession?.loggedIn) {
+        openLoginModal();
         return;
     }
 
@@ -417,8 +548,8 @@ async function startCapture() {
             if (state.leads.some(l => l.id === data.lead.id)) return; // dedup
 
             // Deduz 1 crédito do localStorage a cada lead recebido
-            const remaining = getCredits() - 1;
-            setCredits(remaining);
+            const remaining = getCreditsIG() - 1;
+            setCreditsIG(remaining);
 
             data.lead.score = calculateScore(data.lead);
             state.leads.push(data.lead);
@@ -475,6 +606,102 @@ async function startCapture() {
 function stopCapture() {
     if (state.eventSource) { state.eventSource.close(); state.eventSource = null; }
     finishCapture('Captura interrompida', 'warning');
+}
+
+// ============================================
+// Captura CNPJ
+// ============================================
+function startCaptureCNPJ() {
+    if (getCreditsCNPJ() <= 0) { openBuyModal(); return; }
+
+    const cnae     = document.getElementById('cnaeSelected').value.trim();
+    const uf       = document.getElementById('cnpjUF').value.trim();
+    const city     = document.getElementById('cnpjCity').value.trim();
+    const quantity = Math.min(parseInt(document.getElementById('cnpjQuantity').value) || 50, 50);
+    const hasPhone  = document.getElementById('cnpjHasPhone').checked;
+    const hasMobile = document.getElementById('cnpjHasMobile').checked;
+    const hasEmail  = document.getElementById('cnpjHasEmail').checked;
+
+    state.isCapturing = true;
+    state.startTime   = new Date();
+    updateCaptureUI(true);
+    document.getElementById('progressContainer').style.display = 'block';
+    setCaptureStatus('Buscando empresas...', true);
+    startTimer();
+
+    const params = new URLSearchParams({ quantity, hasPhone, hasMobile, hasEmail });
+    if (cnae) params.set('cnae', cnae);
+    if (uf)   params.set('uf', uf);
+    if (city) params.set('municipio', city);
+
+    const es = new EventSource(`/api/cnpj/search?${params}`);
+    state.eventSource = es;
+
+    es.onmessage = e => {
+        const data = JSON.parse(e.data);
+        if (data.type === 'lead') {
+            if (state.leads.some(l => l.id === data.lead.id)) return;
+
+            const remaining = getCreditsCNPJ() - 1;
+            setCreditsCNPJ(remaining);
+
+            state.leads.push(data.lead);
+            updateProgress(state.leads.length, quantity);
+            try { renderRowCNPJ(data.lead); } catch(err) { console.error(err); }
+            updateCounts();
+
+            if (remaining <= 0) {
+                es.close(); state.eventSource = null;
+                finishCapture(`${state.leads.length} leads capturados — créditos esgotados`, 'warning');
+                setTimeout(() => openBuyModal(), 800);
+            }
+        } else if (data.type === 'log') {
+            document.getElementById('progressText').textContent = data.message;
+        } else if (data.type === 'done') {
+            es.close(); state.eventSource = null;
+            setProgress(100, `${state.leads.length} empresas encontradas`);
+            finishCapture(`Concluído — ${state.leads.length} leads CNPJ encontrados`, 'success');
+            updateCreditsUI();
+        } else if (data.type === 'error') {
+            es.close(); state.eventSource = null;
+            finishCapture(data.message, 'error');
+        }
+    };
+
+    es.onerror = () => {
+        es.close();
+        const wasCapturing = state.isCapturing;
+        state.eventSource = null;
+        if (wasCapturing) finishCapture('Conexão interrompida', 'error');
+    };
+}
+
+function renderRowCNPJ(lead) {
+    const tbody = document.getElementById('resultsBody');
+    document.getElementById('emptyRow')?.remove();
+
+    const nome = lead.nomeFantasia || lead.razaoSocial || '-';
+    const tel1 = lead.telefone  || '-';
+    const tel2 = lead.isMobile ? lead.telefone : (lead.telefone2 || '-');
+    const celular = lead.isMobile ? lead.telefone : (lead.telefone2 && lead.telefone2.replace(/\D/g,'').length === 11 ? lead.telefone2 : '-');
+    const fixo    = !lead.isMobile ? lead.telefone : (lead.telefone2 || '-');
+
+    const row = document.createElement('tr');
+    row.dataset.id       = lead.id;
+    row.dataset.has_email = lead.email ? '1' : '0';
+
+    row.innerHTML = `
+        <td><input type="checkbox" class="row-checkbox" data-id="${lead.id}"></td>
+        <td style="max-width:160px"><strong style="font-size:.85rem">${nome}</strong><br><small style="color:var(--gray);font-size:.75rem">${lead.razaoSocial !== nome ? lead.razaoSocial : ''}</small></td>
+        <td style="font-size:.8rem;font-family:monospace">${lead.cnpj || '-'}</td>
+        <td style="font-size:.78rem;max-width:140px" title="${lead.cnaeDesc}">${lead.cnaeDesc ? lead.cnaeDesc.slice(0,40)+(lead.cnaeDesc.length>40?'…':'') : lead.cnae || '-'}</td>
+        <td style="font-size:.82rem">${fixo !== '-' ? `<i class="fas fa-phone" style="color:var(--gray);font-size:.7rem"></i> ${fixo}` : '-'}</td>
+        <td style="font-size:.82rem">${celular !== '-' ? `<a href="https://wa.me/55${celular.replace(/\D/g,'')}" target="_blank" class="contact-link wa-link"><i class="fab fa-whatsapp"></i> ${celular}</a>` : '-'}</td>
+        <td class="email-value">${lead.email ? `<a href="mailto:${lead.email}" class="contact-link mail-link"><i class="fas fa-envelope"></i> ${lead.email}</a>` : '-'}</td>
+        <td style="font-size:.82rem">${lead.municipio || ''}${lead.municipio && lead.uf ? ' / ' : ''}${lead.uf || ''}</td>
+        <td><button class="action-btn delete" onclick="deleteLead('${lead.id}')" title="Excluir"><i class="fas fa-trash"></i></button></td>
+    `;
+    tbody.appendChild(row);
 }
 
 function finishCapture(msg, type) {
@@ -1081,7 +1308,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. Inicializa créditos do localStorage
     updateCreditsUI();
 
-    // 2. Verifica status do Instagram
+    // 2. Carrega lista de CNAEs em background
+    loadCnaeList();
+
+    // 3. Fecha dropdown CNAE ao clicar fora
+    document.addEventListener('click', e => {
+        if (!e.target.closest('#cnaeSearch') && !e.target.closest('#cnaeDropdown')) {
+            const dd = document.getElementById('cnaeDropdown');
+            if (dd) dd.style.display = 'none';
+        }
+    });
+
+    // 4. Verifica status do Instagram
     checkLoginStatus();
 
     // 3. Fechar modal ao clicar fora

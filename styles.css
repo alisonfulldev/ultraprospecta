@@ -169,6 +169,59 @@ body {
     top: 1.5rem;
 }
 
+/* Source toggle */
+.source-toggle {
+    display: flex;
+    gap: .5rem;
+    margin-bottom: 1.25rem;
+}
+.source-btn {
+    flex: 1;
+    padding: .55rem .5rem;
+    border: 1.5px solid rgba(255,255,255,.15);
+    border-radius: 8px;
+    background: transparent;
+    color: rgba(255,255,255,.5);
+    font-size: .82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+    font-family: inherit;
+}
+.source-btn.active {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(0,200,83,.08);
+}
+.source-btn:hover:not(.active) {
+    border-color: rgba(255,255,255,.3);
+    color: rgba(255,255,255,.8);
+}
+
+/* CNAE dropdown */
+.cnae-dropdown {
+    position: absolute;
+    z-index: 200;
+    background: #1a2e1e;
+    border: 1px solid rgba(0,200,83,.3);
+    border-radius: 8px;
+    width: 100%;
+    max-height: 240px;
+    overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.cnae-item {
+    padding: .55rem .85rem;
+    font-size: .78rem;
+    color: rgba(255,255,255,.8);
+    cursor: pointer;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+    line-height: 1.4;
+}
+.cnae-item:hover { background: rgba(0,200,83,.12); color: #fff; }
+.cnae-item strong { color: var(--primary); }
+.form-group { position: relative; }
+
 .sidebar-section h3 {
     color: white;
     font-size: 0.9375rem;

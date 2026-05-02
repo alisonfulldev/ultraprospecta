@@ -5,6 +5,7 @@ const axios    = require('axios');
 const crypto   = require('crypto');
 const Stripe   = require('stripe');
 const { IgApiClient, IgCheckpointError } = require('instagram-private-api');
+const { getDb } = require('./db');
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY || '');
 
@@ -299,15 +300,20 @@ app.post('/api/challenge', async (req, res) => {
 
 // ============================================
 // PAYMENT ROUTES — Stripe
-// Pacote fixo: 100 leads = R$10,00
+// Instagram: 100 leads = R$10,00
+// CNPJ:      50 leads  = R$10,00
 // ============================================
-const PACK_CREDITS = 100;
-const PACK_PRICE   = 1000; // centavos (R$10,00)
+const PACKS = {
+    instagram: { credits: 100, price: 1000, name: 'UltraProspec — 100 Leads Instagram', desc: 'R$0,10 por lead qualificado do Instagram' },
+    cnpj:      { credits: 50,  price: 1000, name: 'UltraProspec — 50 Leads CNPJ',      desc: 'R$0,20 por lead empresarial da Receita Federal' }
+};
 
 app.post('/api/payment/create', async (req, res) => {
     if (!process.env.STRIPE_SECRET_KEY)
         return res.status(500).json({ error: 'STRIPE_SECRET_KEY não configurada no .env' });
 
+    const type = (req.body.type === 'cnpj') ? 'cnpj' : 'instagram';
+    const pack = PACKS[type];
     const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
     try {
         const session = await stripe.checkout.sessions.create({
@@ -315,15 +321,15 @@ app.post('/api/payment/create', async (req, res) => {
             line_items: [{
                 price_data: {
                     currency:     'brl',
-                    product_data: { name: 'UltraProspec — 100 Leads', description: 'R$ 0,10 por lead qualificado do Instagram' },
-                    unit_amount:  PACK_PRICE
+                    product_data: { name: pack.name, description: pack.desc },
+                    unit_amount:  pack.price
                 },
                 quantity: 1
             }],
             mode:        'payment',
             success_url: `${baseUrl}/payment-success.html?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url:  `${baseUrl}/app.html`,
-            metadata:    { credits: String(PACK_CREDITS) }
+            metadata:    { credits: String(pack.credits), type }
         });
         res.json({ checkoutUrl: session.url });
     } catch (err) {
@@ -332,12 +338,11 @@ app.post('/api/payment/create', async (req, res) => {
     }
 });
 
-// Verificação após redirect do Stripe — valida a session e retorna créditos
+// Verificação após redirect do Stripe
 app.get('/api/payment/verify', async (req, res) => {
     const { session_id } = req.query;
     if (!session_id) return res.status(400).json({ error: 'session_id obrigatório' });
 
-    // Evita dupla contagem na mesma sessão de servidor
     if (!req.session.verifiedSessions) req.session.verifiedSessions = [];
     if (req.session.verifiedSessions.includes(session_id))
         return res.json({ approved: false, alreadyUsed: true });
@@ -348,7 +353,9 @@ app.get('/api/payment/verify', async (req, res) => {
             return res.json({ approved: false, status: session.payment_status });
 
         req.session.verifiedSessions.push(session_id);
-        res.json({ approved: true, credits: PACK_CREDITS, amount: session.amount_total / 100 });
+        const type    = session.metadata?.type || 'instagram';
+        const credits = parseInt(session.metadata?.credits) || PACKS[type]?.credits || 100;
+        res.json({ approved: true, credits, type, amount: session.amount_total / 100 });
     } catch (err) {
         console.error('Stripe verify error:', err.message);
         res.status(500).json({ error: 'Erro ao verificar pagamento: ' + err.message });
@@ -620,6 +627,94 @@ app.get('/api/capture', async (req, res) => {
         const msg = err.response?.data?.message || err.message;
         send({ type: 'error', message: msg });
     } finally { end(); }
+});
+
+// ============================================
+// CNAE LIST — proxy IBGE (com cache em memória)
+// ============================================
+let cnaeCache = null;
+app.get('/api/cnae/list', async (req, res) => {
+    if (cnaeCache) return res.json(cnaeCache);
+    try {
+        const r = await axios.get('https://servicodados.ibge.gov.br/api/v2/cnae/classes', { timeout: 10000 });
+        cnaeCache = r.data.map(c => ({ code: String(c.id), desc: c.descricao }));
+        res.json(cnaeCache);
+    } catch {
+        res.json([]);
+    }
+});
+
+// ============================================
+// CNPJ SEARCH — SSE, busca no SQLite local
+// ============================================
+app.get('/api/cnpj/search', (req, res) => {
+    const db = getDb();
+    if (!db) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.flushHeaders();
+        res.write(`data: ${JSON.stringify({ type: 'error', message: 'Base CNPJ não carregada. Execute "node import-receita.js" primeiro.' })}\n\n`);
+        return res.end();
+    }
+
+    const { cnae, uf, municipio, quantity = '50', hasPhone = 'false', hasMobile = 'false', hasEmail = 'false' } = req.query;
+    const maxLeads = Math.min(parseInt(quantity) || 50, 50);
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const send = d => { if (!res.writableEnded) res.write(`data: ${JSON.stringify(d)}\n\n`); };
+
+    try {
+        const where  = ["situacao = '02'"]; // só ativas
+        const params = [];
+
+        if (cnae)     { where.push('cnae_principal = ?');              params.push(cnae); }
+        if (uf)       { where.push('uf = ?');                          params.push(uf.toUpperCase()); }
+        if (municipio){ where.push('municipio LIKE ?');                params.push(`%${municipio.toUpperCase()}%`); }
+        if (hasPhone  === 'true') { where.push('telefone1 IS NOT NULL AND telefone1 != ""'); }
+        if (hasMobile === 'true') { where.push('(length(telefone1) = 9 AND telefone1 LIKE "9%")'); }
+        if (hasEmail  === 'true') { where.push('email IS NOT NULL AND email != ""'); }
+
+        send({ type: 'log', message: 'Buscando na base da Receita Federal...' });
+
+        const rows = db.prepare(`
+            SELECT * FROM estabelecimentos
+            WHERE ${where.join(' AND ')}
+            ORDER BY RANDOM()
+            LIMIT ?
+        `).all(...params, maxLeads);
+
+        rows.forEach(row => {
+            const isMobile = row.telefone1 && row.telefone1.length === 9 && row.telefone1.startsWith('9');
+            const lead = {
+                id:           row.cnpj,
+                cnpj:         row.cnpj,
+                razaoSocial:  row.razao_social  || '',
+                nomeFantasia: row.nome_fantasia  || '',
+                cnae:         row.cnae_principal || '',
+                cnaeDesc:     row.cnae_desc      || '',
+                uf:           row.uf             || '',
+                municipio:    row.municipio      || '',
+                telefone:     row.ddd1 && row.telefone1 ? `(${row.ddd1}) ${row.telefone1}` : '',
+                telefone2:    row.ddd2 && row.telefone2 ? `(${row.ddd2}) ${row.telefone2}` : '',
+                email:        row.email          || '',
+                endereco:     [row.logradouro, row.numero, row.bairro].filter(Boolean).join(', '),
+                cep:          row.cep            || '',
+                porte:        row.porte          || '',
+                isMobile,
+                source: 'cnpj'
+            };
+            send({ type: 'lead', lead });
+        });
+
+        send({ type: 'done', total: rows.length });
+    } catch (err) {
+        send({ type: 'error', message: err.message });
+    }
+    res.end();
 });
 
 // ============================================

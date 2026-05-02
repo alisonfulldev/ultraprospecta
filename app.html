@@ -33,14 +33,20 @@
             <span>UltraProspec</span>
         </a>
         <div class="header-actions">
-            <!-- Créditos -->
-            <div class="credits-display" id="creditsDisplay" style="display:none">
-                <span class="credits-icon">⚡</span>
-                <span id="creditsCount">0</span>
-                <span class="credits-label">leads</span>
+            <!-- Créditos Instagram -->
+            <div class="credits-display" id="creditsDisplayIG" style="display:none" title="Créditos Instagram">
+                <span class="credits-icon"><i class="fab fa-instagram" style="font-size:.8rem"></i></span>
+                <span id="creditsCountIG">0</span>
+                <span class="credits-label">IG</span>
+            </div>
+            <!-- Créditos CNPJ -->
+            <div class="credits-display" id="creditsDisplayCNPJ" style="display:none" title="Créditos CNPJ">
+                <span class="credits-icon"><i class="fas fa-building" style="font-size:.8rem"></i></span>
+                <span id="creditsCountCNPJ">0</span>
+                <span class="credits-label">CNPJ</span>
             </div>
             <button class="btn btn-success btn-sm" id="btnBuyCredits" onclick="openBuyModal()" style="display:none">
-                + 100 Leads — R$10
+                + Comprar Leads
             </button>
             <!-- Status Instagram -->
             <div class="login-status" id="loginStatus">
@@ -67,6 +73,30 @@
 
         <!-- Sidebar -->
         <aside class="sidebar" id="mainSidebar">
+
+            <!-- Toggle de Fonte -->
+            <div class="source-toggle">
+                <button class="source-btn active" id="btnSourceIG" onclick="setSource('instagram')">
+                    <i class="fab fa-instagram"></i> Instagram
+                </button>
+                <button class="source-btn" id="btnSourceCNPJ" onclick="setSource('cnpj')">
+                    <i class="fas fa-building"></i> CNPJ
+                </button>
+            </div>
+
+            <!-- ===== SIDEBAR INSTAGRAM ===== -->
+            <div id="sidebarIG">
+
+            <!-- Prompt de login (visível quando desconectado) -->
+            <div id="igLoginPrompt" class="sidebar-section" style="display:none">
+                <div style="text-align:center;padding:.25rem 0 .5rem">
+                    <i class="fab fa-instagram" style="font-size:2rem;color:rgba(255,255,255,.25)"></i>
+                    <p style="color:rgba(255,255,255,.45);font-size:.82rem;margin:.65rem 0 1rem;line-height:1.5">Conecte sua conta do Instagram para capturar leads</p>
+                    <button class="btn btn-outline btn-block" onclick="openLoginModal()" style="justify-content:center">
+                        <i class="fas fa-sign-in-alt"></i> Conectar Instagram
+                    </button>
+                </div>
+            </div>
 
             <!-- Tipo de Captura -->
             <div class="sidebar-section">
@@ -251,6 +281,71 @@
                 </div>
             </div>
 
+            </div><!-- /sidebarIG -->
+
+            <!-- ===== SIDEBAR CNPJ ===== -->
+            <div id="sidebarCNPJ" style="display:none">
+
+                <div class="sidebar-section">
+                    <h3><i class="fas fa-industry"></i> Busca por CNAE</h3>
+
+                    <div class="form-group">
+                        <label>Setor / Atividade</label>
+                        <input type="text" id="cnaeSearch" placeholder="Ex: clínica, padaria, advocacia..." oninput="filterCnae(this.value)" autocomplete="off">
+                        <div id="cnaeDropdown" class="cnae-dropdown" style="display:none"></div>
+                        <input type="hidden" id="cnaeSelected">
+                        <small class="hint" id="cnaeSelectedLabel"></small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Estado (UF)</label>
+                        <select id="cnpjUF" onchange="cnpjUFChanged()">
+                            <option value="">Todos os estados</option>
+                            <option>AC</option><option>AL</option><option>AM</option><option>AP</option>
+                            <option>BA</option><option>CE</option><option>DF</option><option>ES</option>
+                            <option>GO</option><option>MA</option><option>MG</option><option>MS</option>
+                            <option>MT</option><option>PA</option><option>PB</option><option>PE</option>
+                            <option>PI</option><option>PR</option><option>RJ</option><option>RN</option>
+                            <option>RO</option><option>RR</option><option>RS</option><option>SC</option>
+                            <option>SE</option><option>SP</option><option>TO</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Cidade</label>
+                        <input type="text" id="cnpjCity" placeholder="Ex: São Paulo">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Quantidade (máx. 50 por crédito)</label>
+                        <input type="number" id="cnpjQuantity" min="1" max="50" value="50">
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3><i class="fas fa-filter"></i> Filtrar Contatos</h3>
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="cnpjHasPhone">
+                            <span>Só com telefone</span>
+                        </label>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="cnpjHasMobile">
+                            <span>Só com celular</span>
+                        </label>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="cnpjHasEmail">
+                            <span>Só com email</span>
+                        </label>
+                    </div>
+                </div>
+
+            </div><!-- /sidebarCNPJ -->
+
             <button class="btn btn-success btn-block" id="btnIniciarCaptura">
                 <i class="fas fa-play"></i> Iniciar Captura
             </button>
@@ -340,7 +435,8 @@
                 <div class="table-container">
                     <table class="results-table" id="resultsTable">
                         <thead>
-                            <tr>
+                            <!-- Colunas Instagram -->
+                            <tr id="theadIG">
                                 <th class="col-check"><input type="checkbox" id="checkAll"></th>
                                 <th class="col-foto">Foto</th>
                                 <th class="col-user">Usuário</th>
@@ -351,10 +447,22 @@
                                 <th class="col-bio">Bio</th>
                                 <th class="col-actions">Ações</th>
                             </tr>
+                            <!-- Colunas CNPJ -->
+                            <tr id="theadCNPJ" style="display:none">
+                                <th class="col-check"><input type="checkbox" id="checkAllCNPJ"></th>
+                                <th>Empresa</th>
+                                <th>CNPJ</th>
+                                <th>Atividade (CNAE)</th>
+                                <th>Telefone</th>
+                                <th>Celular</th>
+                                <th class="col-email">Email</th>
+                                <th>Cidade / UF</th>
+                                <th class="col-actions">Ações</th>
+                            </tr>
                         </thead>
                         <tbody id="resultsBody">
                             <tr class="empty-row" id="emptyRow">
-                                <td colspan="10">
+                                <td colspan="9">
                                     <div class="empty-state">
                                         <i class="fas fa-crosshairs"></i>
                                         <p>Nenhum lead capturado ainda</p>
@@ -483,20 +591,31 @@
 
 <!-- ── MODAL: Comprar Leads ── -->
 <div class="modal" id="buyModal">
-    <div class="modal-content modal-sm">
+    <div class="modal-content" style="max-width:520px">
         <div class="modal-header">
-            <h2>⚡ Comprar 100 Leads</h2>
+            <h2>⚡ Escolha seu pacote de leads</h2>
             <button class="modal-close" onclick="closeBuyModal()">&times;</button>
         </div>
-        <div class="modal-body" style="text-align:center;padding:1.5rem 1.5rem 1rem">
-            <div style="font-size:3rem;font-weight:900;color:var(--primary);line-height:1">R$10</div>
-            <div style="color:rgba(255,255,255,.5);font-size:.85rem;margin:.4rem 0 1.25rem">100 leads qualificados · R$0,10 por lead</div>
-            <ul style="list-style:none;text-align:left;margin-bottom:1.5rem">
-                <li style="color:rgba(255,255,255,.7);font-size:.875rem;padding:.35rem 0;display:flex;align-items:center;gap:.6rem"><span style="color:var(--primary)">✓</span> WhatsApp e email extraídos automaticamente</li>
-                <li style="color:rgba(255,255,255,.7);font-size:.875rem;padding:.35rem 0;display:flex;align-items:center;gap:.6rem"><span style="color:var(--primary)">✓</span> Score de qualificação por comportamento</li>
-                <li style="color:rgba(255,255,255,.7);font-size:.875rem;padding:.35rem 0;display:flex;align-items:center;gap:.6rem"><span style="color:var(--primary)">✓</span> Exportação PDF e CSV profissional</li>
-                <li style="color:rgba(255,255,255,.7);font-size:.875rem;padding:.35rem 0;display:flex;align-items:center;gap:.6rem"><span style="color:var(--primary)">✓</span> Todos os nichos atendidos</li>
-            </ul>
+        <div class="modal-body" style="padding:1.5rem">
+            <!-- Seleção de pacote -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem">
+                <!-- Pack Instagram -->
+                <div class="buy-pack" id="packIG" onclick="selectPack('instagram')" style="border:2px solid var(--primary);border-radius:12px;padding:1.25rem;cursor:pointer;text-align:center;background:rgba(0,200,83,.06)">
+                    <div style="font-size:1.6rem;margin-bottom:.4rem"><i class="fab fa-instagram"></i></div>
+                    <div style="font-weight:700;font-size:.95rem;margin-bottom:.2rem">Instagram</div>
+                    <div style="font-size:2rem;font-weight:900;color:var(--primary)">R$10</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:rgba(255,255,255,.8)">100 leads</div>
+                    <div style="font-size:.75rem;color:rgba(255,255,255,.45);margin-top:.3rem">WhatsApp · Email · Score</div>
+                </div>
+                <!-- Pack CNPJ -->
+                <div class="buy-pack" id="packCNPJ" onclick="selectPack('cnpj')" style="border:2px solid transparent;border-radius:12px;padding:1.25rem;cursor:pointer;text-align:center;background:rgba(255,255,255,.04)">
+                    <div style="font-size:1.6rem;margin-bottom:.4rem"><i class="fas fa-building"></i></div>
+                    <div style="font-weight:700;font-size:.95rem;margin-bottom:.2rem">CNPJ Empresas</div>
+                    <div style="font-size:2rem;font-weight:900;color:var(--primary)">R$10</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:rgba(255,255,255,.8)">50 leads</div>
+                    <div style="font-size:.75rem;color:rgba(255,255,255,.45);margin-top:.3rem">Telefone · Email · CNAE</div>
+                </div>
+            </div>
             <p id="buyError" style="display:none;color:#ff6b6b;font-size:.83rem;margin-bottom:.75rem"></p>
         </div>
         <div class="modal-footer" style="flex-direction:column;gap:.75rem">
