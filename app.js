@@ -324,7 +324,7 @@ let activeLoginTab = 'cookie';
 
 const IG_KEY = 'up_ig_session';
 
-function saveIgSession(creds)  { localStorage.setItem(IG_KEY, JSON.stringify(creds)); }
+function saveIgSession(creds)  { localStorage.setItem(IG_KEY, JSON.stringify({ loggedIn: true, ...creds })); }
 function clearIgSession()      { localStorage.removeItem(IG_KEY); }
 function loadIgSession()       { try { return JSON.parse(localStorage.getItem(IG_KEY) || 'null'); } catch { return null; } }
 
@@ -709,7 +709,7 @@ function finishCapture(msg, type) {
     stopTimer();
     updateCaptureUI(false);
     setCaptureStatus(msg, false);
-    document.getElementById('btnExportar').disabled    = state.leads.length === 0;
+    const _exp = document.getElementById('btnExportar'); if (_exp) _exp.disabled = state.leads.length === 0;
     document.getElementById('btnExportarPDF').disabled = state.leads.length === 0;
     showToast(msg, type);
     // Auto-download do PDF sempre que houver leads — evita perda ao recarregar a página
@@ -894,7 +894,7 @@ function deleteLead(id) {
     state.leads = state.leads.filter(l => l.id != id);
     document.querySelector(`tr[data-id="${id}"]`)?.remove();
     updateCounts();
-    document.getElementById('btnExportar').disabled    = state.leads.length === 0;
+    const _exp = document.getElementById('btnExportar'); if (_exp) _exp.disabled = state.leads.length === 0;
     document.getElementById('btnExportarPDF').disabled = state.leads.length === 0;
     if (state.leads.length === 0) showEmptyState();
 }
@@ -924,7 +924,7 @@ function deleteSelected() {
     state.selectedIds.forEach(id => document.querySelector(`tr[data-id="${id}"]`)?.remove());
     state.selectedIds.clear();
     updateCounts();
-    document.getElementById('btnExportar').disabled    = state.leads.length === 0;
+    const _exp = document.getElementById('btnExportar'); if (_exp) _exp.disabled = state.leads.length === 0;
     document.getElementById('btnExportarPDF').disabled = state.leads.length === 0;
     if (!state.leads.length) showEmptyState();
     showToast(`${count} leads excluídos`, 'success');
@@ -1265,7 +1265,7 @@ function parseCSV(content) {
     }
     imported.forEach(l => renderRow(l));
     updateCounts();
-    document.getElementById('btnExportar').disabled    = false;
+    const _expC = document.getElementById('btnExportar'); if (_expC) _expC.disabled = false;
     document.getElementById('btnExportarPDF').disabled = false;
     showImportPreview(imported, header);
     showToast(`${imported.length} leads importados!`, 'success');
@@ -1388,3 +1388,739 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 window.deleteLead = deleteLead;
+
+
+// ═══════════════════════════════════════════════════════════════
+// MOBILE WIZARD — fluxo step-by-step (≤768px)
+// Fluxo IG:   source→ig_type→ig_config→ig_credits→ig_login→ig_ready→captura
+// Fluxo CNPJ: source→cnpj_config→cnpj_credits→cnpj_ready→captura
+// ═══════════════════════════════════════════════════════════════
+
+const mwState = {
+    source: null,
+    currentStep: 'source',
+    igType: 'profile_analysis',
+};
+
+let mwPendingLogin   = false;
+let mwCaptureTimer   = null;   // interval para monitor da captura
+let mwLastPdfExport  = null;   // referência ao PDF gerado
+
+const MW_FLOW_IG   = ['source','ig_type','ig_config','ig_credits','ig_login','ig_ready'];
+const MW_FLOW_CNPJ = ['source','cnpj_config','cnpj_credits','cnpj_ready'];
+
+const MW_STEP_EL = {
+    source:         'mwStepSource',
+    ig_type:        'mwStepIGType',
+    ig_config:      'mwStepIGConfig',
+    ig_credits:     'mwStepIGCredits',
+    ig_login:       'mwStepIGLogin',
+    ig_ready:       'mwStepIGReady',
+    cnpj_config:    'mwStepCNPJConfig',
+    cnpj_credits:   'mwStepCNPJCredits',
+    cnpj_ready:     'mwStepCNPJReady',
+};
+
+function mwIsMobile() {
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
+// ─── Inicialização ────────────────────────────────────────────
+function mwInit() {
+    if (!mwIsMobile()) return;
+    mwGoToStep('source');
+
+    document.querySelectorAll('input[name="mwIGType"]').forEach(r => {
+        r.addEventListener('change', () => { mwState.igType = r.value; });
+    });
+
+    // Monkey-patch closeLoginModal para detectar login bem-sucedido
+    const _orig = closeLoginModal;
+    closeLoginModal = function() {
+        _orig();
+        if (!mwIsMobile()) return;
+        setTimeout(() => {
+            if (mwState.currentStep === 'ig_login') mwRefreshLoginStep();
+            if (mwPendingLogin) {
+                mwPendingLogin = false;
+                if (loadIgSession()?.loggedIn) mwGoToStep('ig_ready');
+            }
+        }, 150);
+    };
+
+    // Atualizar créditos quando buy modal fechar
+    ['closeLoginModal','btnCancelLogin'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('click', () => {
+            if (mwState.currentStep === 'ig_credits')    mwSetupCreditsStep('ig');
+            if (mwState.currentStep === 'cnpj_credits')  mwSetupCreditsStep('cnpj');
+        });
+    });
+}
+
+// ─── Seleção de origem ────────────────────────────────────────
+function mwChooseSource(source) {
+    mwState.source = source;
+    setSource(source);
+    document.querySelectorAll('.mw-source-card').forEach(c => c.classList.remove('selected'));
+    document.getElementById(source === 'instagram' ? 'mwCardIG' : 'mwCardCNPJ')?.classList.add('selected');
+    setTimeout(() => mwGoToStep(source === 'instagram' ? 'ig_type' : 'cnpj_config'), 220);
+}
+
+// ─── Navegação ────────────────────────────────────────────────
+function mwGoToStep(step) {
+    Object.values(MW_STEP_EL).forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+    const el = document.getElementById(MW_STEP_EL[step]);
+    if (el) el.style.display = 'block';
+    mwState.currentStep = step;
+
+    const body = document.getElementById('mwBody');
+    if (body) body.scrollTop = 0;
+
+    mwUpdateTopbar(step);
+    mwUpdateFooter(step);
+
+    if (step === 'ig_config')    mwSetupIGConfig();
+    if (step === 'ig_credits')   mwSetupCreditsStep('ig');
+    if (step === 'ig_login')     mwRefreshLoginStep();
+    if (step === 'ig_ready')     mwSetupReadyStep('ig');
+    if (step === 'cnpj_credits') mwSetupCreditsStep('cnpj');
+    if (step === 'cnpj_ready')   mwSetupReadyStep('cnpj');
+}
+
+function mwBack() {
+    const flow = mwState.source === 'cnpj' ? MW_FLOW_CNPJ : MW_FLOW_IG;
+    const idx  = flow.indexOf(mwState.currentStep);
+    if (idx <= 0) return;
+    mwGoToStep(flow[idx - 1]);
+}
+
+function mwNext() {
+    const flow   = mwState.source === 'cnpj' ? MW_FLOW_CNPJ : MW_FLOW_IG;
+    const idx    = flow.indexOf(mwState.currentStep);
+    const isLast = idx === flow.length - 1;
+
+    if (isLast) { mwExecute(); return; }
+    if (!mwValidate(mwState.currentStep)) return;
+    mwGoToStep(flow[idx + 1]);
+}
+
+// ─── Validação ────────────────────────────────────────────────
+function mwValidate(step) {
+    if (step === 'ig_config') {
+        const type = mwState.igType;
+        if (type === 'common_followers') {
+            const v = (document.getElementById('mwIGMultiTarget')?.value || '').trim();
+            if (v.split(',').filter(s => s.trim()).length < 2) {
+                showToast('Informe pelo menos 2 perfis separados por vírgula', 'error'); return false;
+            }
+        } else if (type === 'comments' || type === 'likes') {
+            if (!(document.getElementById('mwIGPostUrl')?.value || '').trim()) {
+                showToast('Informe a URL do post', 'error'); return false;
+            }
+        } else {
+            if (!(document.getElementById('mwIGTarget')?.value || '').trim()) {
+                showToast('Informe o perfil alvo', 'error'); return false;
+            }
+        }
+    }
+    if (step === 'cnpj_config') {
+        const qty = parseInt(document.getElementById('mwCnpjQty')?.value) || 0;
+        if (qty < 1) { showToast('Informe a quantidade de leads', 'error'); return false; }
+    }
+    if (step === 'ig_credits') {
+        if (getCreditsIG() <= 0) { showToast('Adquira créditos para continuar', 'warning'); return false; }
+    }
+    if (step === 'ig_login') {
+        if (!loadIgSession()?.loggedIn) { showToast('Conecte sua conta do Instagram para continuar', 'warning'); return false; }
+    }
+    if (step === 'cnpj_credits') {
+        if (getCreditsCNPJ() <= 0) { showToast('Adquira créditos para continuar', 'warning'); return false; }
+    }
+    return true;
+}
+
+// ─── Step: Créditos ──────────────────────────────────────────
+function mwSetupCreditsStep(source) {
+    const isIG = source === 'ig';
+    const credits = isIG ? getCreditsIG() : getCreditsCNPJ();
+    const hasEl   = document.getElementById(isIG ? 'mwIGHasCredits'  : 'mwCNPJHasCredits');
+    const noEl    = document.getElementById(isIG ? 'mwIGNoCredits'   : 'mwCNPJNoCredits');
+    const countEl = document.getElementById(isIG ? 'mwIGCredCount'   : 'mwCNPJCredCount');
+    const iconEl  = document.getElementById(isIG ? 'mwIGCredIcon'    : 'mwCNPJCredIcon');
+    const titleEl = document.getElementById(isIG ? 'mwIGCredTitle'   : null);
+
+    if (credits > 0) {
+        if (hasEl)  hasEl.style.display  = 'block';
+        if (noEl)   noEl.style.display   = 'none';
+        if (countEl) countEl.textContent  = credits;
+        if (iconEl)  iconEl.className     = 'mw-hero-icon mw-icon-success';
+        if (iconEl)  iconEl.innerHTML     = '<i class="fas fa-check-circle"></i>';
+        if (titleEl) titleEl.textContent  = 'Créditos OK!';
+        // Auto-avança após breve exibição
+        setTimeout(() => {
+            if (mwState.currentStep === (isIG ? 'ig_credits' : 'cnpj_credits')) {
+                mwGoToStep(isIG ? 'ig_login' : 'cnpj_ready');
+            }
+        }, 900);
+    } else {
+        if (hasEl) hasEl.style.display = 'none';
+        if (noEl)  noEl.style.display  = 'block';
+        if (iconEl) {
+            iconEl.className = 'mw-hero-icon';
+            iconEl.innerHTML = '<i class="fas fa-coins"></i>';
+        }
+        if (titleEl) titleEl.textContent = 'Sem créditos';
+    }
+    mwUpdateFooter(mwState.currentStep);
+}
+
+function mwBuyCreditsIG()   { selectPack('instagram'); openBuyModal(); }
+function mwBuyCreditsCNPJ() { selectPack('cnpj');      openBuyModal(); }
+
+// ─── Step: Login Instagram ────────────────────────────────────
+function mwRefreshLoginStep() {
+    const session  = loadIgSession();
+    const loggedIn = !!session?.loggedIn;
+    const notConn  = document.getElementById('mwIGNotConn');
+    const conn     = document.getElementById('mwIGConn');
+    const iconEl   = document.getElementById('mwIGLoginIcon');
+    const titleEl  = document.getElementById('mwIGLoginTitle');
+    const userEl   = document.getElementById('mwIGConnUser');
+
+    if (notConn) notConn.style.display = loggedIn ? 'none'  : 'block';
+    if (conn)    conn.style.display    = loggedIn ? 'block' : 'none';
+
+    if (loggedIn) {
+        if (iconEl)  { iconEl.className = 'mw-hero-icon mw-icon-success'; iconEl.innerHTML = '<i class="fab fa-instagram"></i>'; }
+        if (titleEl) titleEl.textContent = 'Instagram conectado!';
+        if (userEl)  userEl.textContent  = `@${session.username || 'usuario'}`;
+    } else {
+        if (iconEl)  { iconEl.className = 'mw-hero-icon mw-icon-warn'; iconEl.innerHTML = '<i class="fab fa-instagram"></i>'; }
+        if (titleEl) titleEl.textContent = 'Conectar Instagram';
+    }
+    mwUpdateFooter(mwState.currentStep);
+}
+
+let mwBrowserPollTimer = null;
+
+async function mwOpenIGBrowser() {
+    const waitEl  = document.getElementById('mwBrowserWaiting');
+    const msgEl   = document.getElementById('mwBrowserWaitMsg');
+    const iconEl  = document.getElementById('mwBrowserWaitIcon');
+    if (waitEl) waitEl.style.display = 'block';
+
+    try {
+        const res  = await fetch('/api/ig-auth/browser-login', { method: 'POST' });
+        const data = await res.json();
+
+        if (!data.success) {
+            if (waitEl) waitEl.style.display = 'none';
+            showToast(data.error || 'Erro ao abrir o navegador', 'error');
+            return;
+        }
+        if (msgEl) msgEl.textContent = 'Instagram aberto! Entre com sua conta e aguarde...';
+
+        mwBrowserPollTimer = setInterval(async () => {
+            try {
+                const r    = await fetch('/api/ig-auth/browser-status');
+                const info = await r.json();
+
+                if (info.status === 'done' && info.data) {
+                    clearInterval(mwBrowserPollTimer); mwBrowserPollTimer = null;
+                    if (waitEl) waitEl.style.display = 'none';
+                    const d = info.data;
+
+                    // Validar e salvar sessão via endpoint existente
+                    try {
+                        const lr = await fetch('/api/login-cookie', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ sessionid: d.sessionid, csrftoken: d.csrftoken, dsUserId: d.dsUserId, username: d.username }),
+                        });
+                        const ld = await lr.json();
+                        const user = ld.success ? ld.user : { username: d.username };
+                        saveIgSession({ username: user.username || d.username, sessionid: d.sessionid, csrftoken: d.csrftoken, dsUserId: d.dsUserId });
+                        updateLoginUI(true, user);
+                        showToast(`Conectado como @${user.username || d.username}!`, 'success');
+                    } catch {
+                        saveIgSession({ username: d.username, sessionid: d.sessionid, csrftoken: d.csrftoken, dsUserId: d.dsUserId });
+                        updateLoginUI(true, { username: d.username });
+                        showToast('Instagram conectado!', 'success');
+                    }
+
+                    mwRefreshLoginStep();
+                    setTimeout(() => { if (mwState.currentStep === 'ig_login') mwGoToStep('ig_ready'); }, 700);
+
+                } else if (['timeout','error','cancelled'].includes(info.status)) {
+                    clearInterval(mwBrowserPollTimer); mwBrowserPollTimer = null;
+                    if (waitEl) waitEl.style.display = 'none';
+                    if (info.status !== 'cancelled') showToast('Login encerrado. Tente novamente.', 'warning');
+                }
+            } catch {}
+        }, 1500);
+
+    } catch {
+        if (waitEl) waitEl.style.display = 'none';
+        showToast('Servidor indisponível. Tente "Colar Session ID".', 'error');
+    }
+}
+
+async function mwCancelBrowserLogin() {
+    if (mwBrowserPollTimer) { clearInterval(mwBrowserPollTimer); mwBrowserPollTimer = null; }
+    const waitEl = document.getElementById('mwBrowserWaiting');
+    if (waitEl) waitEl.style.display = 'none';
+    try { await fetch('/api/ig-auth/browser-cancel', { method: 'POST' }); } catch {}
+}
+
+// ─── Step: Pronto (summary) ───────────────────────────────────
+function mwSetupReadyStep(source) {
+    const isIG   = source === 'ig';
+    const summEl = document.getElementById(isIG ? 'mwIGSummary' : 'mwCNPJSummary');
+    if (!summEl) return;
+
+    if (isIG) {
+        const session  = loadIgSession();
+        const typeNames = {
+            profile_analysis: 'Análise Completa ⭐',
+            recent_likes:     'Curtidores Recentes',
+            comments:         'Comentaristas',
+            common_followers: 'Seguidores em Comum',
+            followers:        'Seguidores',
+            hashtag:          'Busca por Profissional',
+            likes:            'Curtidores de Post',
+        };
+        const type   = mwState.igType;
+        let   target = '';
+        if (type === 'common_followers') {
+            target = (document.getElementById('mwIGMultiTarget')?.value || '').split(',')[0]?.trim() + '…';
+        } else if (type === 'comments' || type === 'likes') {
+            target = document.getElementById('mwIGPostUrl')?.value?.trim() || '—';
+        } else {
+            target = document.getElementById('mwIGTarget')?.value?.trim() || '—';
+        }
+        const qty    = document.getElementById('mwIGQty')?.value || '200';
+        const cred   = getCreditsIG();
+        const user   = session?.username ? `@${session.username}` : 'Conectado';
+
+        summEl.innerHTML = `
+            <div class="mw-summary-row"><span>Conta</span><strong>${user}</strong></div>
+            <div class="mw-summary-row"><span>Tipo</span><strong>${typeNames[type] || type}</strong></div>
+            <div class="mw-summary-row"><span>Alvo</span><strong>${target}</strong></div>
+            <div class="mw-summary-row"><span>Quantidade</span><strong>${qty} leads</strong></div>
+            <div class="mw-summary-row"><span>Créditos IG</span><strong>${cred} disponíveis</strong></div>
+        `;
+    } else {
+        const cnaeLabel = document.getElementById('mwCnaeLabel')?.textContent?.replace('Código: ','') || 'Todos';
+        const uf   = document.getElementById('mwCnpjUF')?.value  || 'Todos';
+        const city = document.getElementById('mwCnpjCity')?.value || 'Todas';
+        const qty  = document.getElementById('mwCnpjQty')?.value  || '50';
+        const cred = getCreditsCNPJ();
+
+        summEl.innerHTML = `
+            <div class="mw-summary-row"><span>Setor</span><strong>${cnaeLabel}</strong></div>
+            <div class="mw-summary-row"><span>Estado</span><strong>${uf}</strong></div>
+            <div class="mw-summary-row"><span>Cidade</span><strong>${city}</strong></div>
+            <div class="mw-summary-row"><span>Quantidade</span><strong>${qty} leads</strong></div>
+            <div class="mw-summary-row"><span>Créditos CNPJ</span><strong>${cred} disponíveis</strong></div>
+        `;
+    }
+    mwUpdateFooter(mwState.currentStep);
+}
+
+// ─── Execução + tela de captura ──────────────────────────────
+async function mwExecute() {
+    if (mwState.source === 'instagram') {
+        if (!loadIgSession()?.loggedIn) {
+            showToast('Conecte o Instagram antes de capturar', 'error'); return;
+        }
+        // Garantir sessão server-side ativa (pode ter expirado por restart do servidor)
+        try {
+            const statusRes  = await fetch('/api/status');
+            const statusData = await statusRes.json();
+            if (!statusData.loggedIn) {
+                const saved = loadIgSession();
+                if (saved?.sessionid) {
+                    const r = await fetch('/api/login-cookie', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(saved),
+                    });
+                    const d = await r.json();
+                    if (!d.success) {
+                        showToast('Sessão expirada. Reconecte o Instagram.', 'error');
+                        mwGoToStep('ig_login'); return;
+                    }
+                } else {
+                    showToast('Conecte o Instagram antes de capturar', 'error');
+                    mwGoToStep('ig_login'); return;
+                }
+            }
+        } catch { /* servidor indisponível — tenta mesmo assim */ }
+    }
+    mwSyncToSidebar();
+
+    // Mostrar tela de captura
+    document.getElementById('mobileWizard').style.display  = 'none';
+    document.getElementById('mwCaptureScreen').style.display = 'flex';
+    document.getElementById('mwCaptureScreen').style.flexDirection = 'column';
+
+    // Reset dos contadores da tela
+    ['mwcsBigCount','mwcsHot','mwcsWA','mwcsEm'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.textContent = '0';
+    });
+    const progFill = document.getElementById('mwcsProgFill');
+    const progPct  = document.getElementById('mwcsProgPct');
+    if (progFill) progFill.style.width = '0%';
+    if (progPct)  progPct.textContent  = '0%';
+    const topTitle = document.getElementById('mwcsTopTitle');
+    if (topTitle) topTitle.textContent = mwState.source === 'cnpj' ? 'Buscando empresas...' : 'Capturando leads...';
+
+    // Iniciar captura
+    if (mwState.source === 'instagram') startCapture();
+    else startCaptureCNPJ();
+
+    // Iniciar monitor
+    mwStartCaptureMonitor();
+}
+
+function mwSyncToSidebar() {
+    if (mwState.source === 'instagram') {
+        const radio = document.querySelector(`input[name="captureType"][value="${mwState.igType}"]`);
+        if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
+
+        const cfg = document.getElementById(`config-${mwState.igType}`);
+        if (cfg) {
+            if (mwState.igType === 'common_followers') {
+                const ta = cfg.querySelector('.target-input');
+                if (ta) ta.value = document.getElementById('mwIGMultiTarget')?.value || '';
+            } else if (mwState.igType === 'hashtag') {
+                const hp = document.getElementById('hashtagProfile');
+                if (hp) hp.value = document.getElementById('mwIGTarget')?.value || '';
+                const ta = cfg.querySelector('.target-input');
+                if (ta) ta.value = document.getElementById('mwIGKeywords')?.value || '';
+            } else if (mwState.igType === 'comments' || mwState.igType === 'likes') {
+                const ta = cfg.querySelector('.target-input');
+                if (ta) ta.value = document.getElementById('mwIGPostUrl')?.value || '';
+            } else {
+                const ta = cfg.querySelector('.target-input');
+                if (ta) ta.value = document.getElementById('mwIGTarget')?.value || '';
+            }
+            const postsEl = cfg.querySelector('.posts-input');
+            if (postsEl) postsEl.value = document.getElementById('mwIGPosts')?.value || '10';
+        }
+
+        const qEl = document.getElementById('quantity');
+        if (qEl) qEl.value = document.getElementById('mwIGQty')?.value || '200';
+        const waEl = document.getElementById('extractWhatsApp');
+        const emEl = document.getElementById('extractEmail');
+        if (waEl) waEl.checked = document.getElementById('mwExtractWA')?.checked ?? true;
+        if (emEl) emEl.checked = document.getElementById('mwExtractEmail')?.checked ?? true;
+
+        const segType  = document.getElementById('mwSegType')?.value       || 'all';
+        const segCity  = document.getElementById('mwSegCity')?.value        || '';
+        const segAct   = document.getElementById('mwSegActive')?.checked    || false;
+        const segReach = document.getElementById('mwSegReachable')?.checked || false;
+        const stEl = document.getElementById('segmentType');
+        const scEl = document.getElementById('segmentCity');
+        const saEl = document.getElementById('segmentActive');
+        const srEl = document.getElementById('segmentReachable');
+        if (stEl) stEl.value   = segType;
+        if (scEl) scEl.value   = segCity;
+        if (saEl) saEl.checked = segAct;
+        if (srEl) srEl.checked = segReach;
+        state.segmentType      = segType;
+        state.segmentCity      = segCity;
+        state.segmentActive    = segAct;
+        state.segmentReachable = segReach;
+    } else {
+        const pairs = [
+            ['cnaeSelected','mwCnaeSelected','value'],
+            ['cnpjUF','mwCnpjUF','value'],
+            ['cnpjCity','mwCnpjCity','value'],
+            ['cnpjQuantity','mwCnpjQty','value'],
+            ['cnpjHasPhone','mwCnpjPhone','checked'],
+            ['cnpjHasMobile','mwCnpjMobile','checked'],
+            ['cnpjHasEmail','mwCnpjEmail','checked'],
+        ];
+        pairs.forEach(([sid,wid,prop]) => {
+            const sEl = document.getElementById(sid);
+            const wEl = document.getElementById(wid);
+            if (sEl && wEl) sEl[prop] = wEl[prop];
+        });
+    }
+}
+
+// ─── Monitor em tempo real ────────────────────────────────────
+function mwStartCaptureMonitor() {
+    let mwWasCapturing = false;
+
+    mwCaptureTimer = setInterval(() => {
+        const total = state.leads.length;
+        const hot   = state.leads.filter(l => (l.score || 0) >= 65).length;
+        const wa    = state.leads.filter(l => l.whatsapp).length;
+        const em    = state.leads.filter(l => l.email).length;
+
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+        set('mwcsBigCount', total);
+        set('mwcsHot', hot);
+        set('mwcsWA', wa);
+        set('mwcsEm', em);
+
+        // Status text
+        const statusTxt = document.getElementById('progressText');
+        const statusEl  = document.getElementById('mwcsStatusMsg');
+        const rawStatus = statusTxt?.textContent || '';
+        if (statusEl) statusEl.textContent = rawStatus || (state.isCapturing ? 'Conectando ao Instagram...' : 'Finalizando...');
+
+        // Contador de perfis escaneados (extrai X/Y do log)
+        const scanMatch = rawStatus.match(/(\d+)\s*\/\s*(\d+)/);
+        const scanEl  = document.getElementById('mwcsScanCount');
+        const scanRow = document.getElementById('mwcsScanRow');
+        if (scanEl && scanRow) {
+            if (scanMatch) {
+                scanEl.textContent = scanMatch[1] + ' / ' + scanMatch[2];
+                scanRow.style.display = 'flex';
+            } else if (total > 0) {
+                scanEl.textContent = total;
+                scanRow.style.display = 'flex';
+            }
+        }
+
+        // Sincronizar barra de progresso
+        const fill  = document.getElementById('progressFill');
+        const mfill = document.getElementById('mwcsProgFill');
+        const mpct  = document.getElementById('mwcsProgPct');
+        if (fill && mfill) {
+            mfill.style.width = fill.style.width;
+            const w = parseFloat(fill.style.width) || 0;
+            if (mpct) mpct.textContent = Math.round(w) + '%';
+        }
+
+        // Último lead
+        if (total > 0) mwRenderLatestLead(state.leads[total - 1]);
+
+        // Detectar início e fim — funciona com 0 leads também
+        if (state.isCapturing) mwWasCapturing = true;
+        if (mwWasCapturing && !state.isCapturing) {
+            clearInterval(mwCaptureTimer);
+            mwCaptureTimer = null;
+            mwCaptureComplete();
+        }
+    }, 600);
+}
+
+function mwStopCaptureMonitor() {
+    if (mwCaptureTimer) { clearInterval(mwCaptureTimer); mwCaptureTimer = null; }
+}
+
+function mwRenderLatestLead(lead) {
+    const wrap = document.getElementById('mwcsLatest');
+    const card = document.getElementById('mwcsLatestCard');
+    if (!wrap || !card) return;
+    wrap.style.display = 'block';
+
+    const score = lead.score || 0;
+    const cls   = score >= 65 ? 'score-hot' : score >= 35 ? 'score-warm' : 'score-cold';
+    const emoji = score >= 65 ? '🔥' : score >= 35 ? '🌡️' : '❄️';
+
+    const name  = lead.fullname || lead.username || lead.razaoSocial || lead.company || '—';
+    const sub   = lead.username ? `@${lead.username}` : (lead.cnpj || '');
+    const photo = lead.profilePicUrl || lead.profile_pic_url || '';
+
+    const avatarHtml = photo
+        ? `<img src="${photo}" class="mwcs-lead-avatar" onerror="this.style.display='none'">`
+        : `<div class="mwcs-lead-avatar-ph">${name.charAt(0).toUpperCase()}</div>`;
+
+    card.innerHTML = `
+        ${avatarHtml}
+        <div class="mwcs-lead-info">
+            <strong>${name}</strong>
+            <small>${sub}${lead.whatsapp ? ' · 📱' : ''}${lead.email ? ' · ✉️' : ''}</small>
+        </div>
+        <span class="mwcs-lead-score ${cls}">${emoji} ${score}</span>
+    `;
+}
+
+function mwStopAndConfirm() {
+    if (state.isCapturing) {
+        if (!confirm('Parar a captura agora? Os leads já capturados serão mantidos.')) return;
+        stopCapture();
+    }
+    mwStopCaptureMonitor();
+    mwCaptureComplete();
+}
+
+function mwCaptureComplete() {
+    mwStopCaptureMonitor();
+
+    // Ocultar tela de captura, mostrar tela de conclusão
+    document.getElementById('mwCaptureScreen').style.display = 'none';
+    const doneEl = document.getElementById('mwDoneScreen');
+    doneEl.style.display = 'flex';
+    doneEl.style.flexDirection = 'column';
+
+    const total = state.leads.length;
+    const hot   = state.leads.filter(l => (l.score || 0) >= 65).length;
+    const wa    = state.leads.filter(l => l.whatsapp).length;
+    const em    = state.leads.filter(l => l.email).length;
+
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('mwdsTotalText', `${total} ${total === 1 ? 'lead capturado!' : 'leads capturados!'}`);
+    set('mwdsHot', hot);
+    set('mwdsWA', wa);
+    set('mwdsEm', em);
+}
+
+// ─── Ver resultados (tabela desktop) ─────────────────────────
+function mwViewResults() {
+    document.getElementById('mwDoneScreen').style.display = 'none';
+    document.body.classList.add('mw-results');
+    const rb = document.getElementById('mwResultsBack');
+    if (rb) rb.style.display = 'block';
+}
+
+function mwShowWizard() {
+    document.getElementById('mwCaptureScreen').style.display = 'none';
+    document.getElementById('mwDoneScreen').style.display    = 'none';
+    document.getElementById('mobileWizard').style.display    = 'flex';
+    document.getElementById('mobileWizard').style.flexDirection = 'column';
+    document.body.classList.remove('mw-results');
+    const rb = document.getElementById('mwResultsBack');
+    if (rb) rb.style.display = 'none';
+    mwGoToStep('source');
+}
+
+// ─── Topbar & Footer ──────────────────────────────────────────
+function mwUpdateTopbar(step) {
+    const backIcon = document.getElementById('mwBackIcon');
+    if (backIcon) backIcon.style.visibility = step === 'source' ? 'hidden' : 'visible';
+
+    const flow = mwState.source === 'cnpj' ? MW_FLOW_CNPJ
+        : (mwState.source ? MW_FLOW_IG : ['source']);
+    const dotsEl = document.getElementById('mwDots');
+    if (!dotsEl) return;
+    const idx = flow.indexOf(step);
+    dotsEl.innerHTML = flow.map((_,i) => {
+        const cls = i < idx ? 'mw-dot done' : i === idx ? 'mw-dot active' : 'mw-dot';
+        return `<span class="${cls}"></span>`;
+    }).join('');
+}
+
+function mwUpdateFooter(step) {
+    const btnBack = document.getElementById('mwBtnBack');
+    const btnNext = document.getElementById('mwBtnNext');
+    if (!btnBack || !btnNext) return;
+
+    const isSource = step === 'source';
+    const flow     = mwState.source === 'cnpj' ? MW_FLOW_CNPJ : MW_FLOW_IG;
+    const isLast   = flow.indexOf(step) === flow.length - 1;
+
+    btnBack.style.visibility = isSource ? 'hidden' : 'visible';
+
+    // Ocultar botão "Continuar" nos steps de crédito com compra pendente
+    const isCreditsWithoutFunds =
+        (step === 'ig_credits' && getCreditsIG() <= 0) ||
+        (step === 'cnpj_credits' && getCreditsCNPJ() <= 0);
+
+    // Ocultar no step de login quando não conectado
+    const isLoginNotConn = step === 'ig_login' && !loadIgSession()?.loggedIn;
+
+    if (isSource || isCreditsWithoutFunds || isLoginNotConn) {
+        btnNext.style.display = 'none';
+    } else {
+        btnNext.style.display = 'flex';
+        if (isLast) {
+            btnNext.innerHTML = '<i class="fas fa-play"></i> Começar extrair leads';
+            btnNext.classList.add('execute');
+        } else {
+            btnNext.innerHTML = 'Continuar <i class="fas fa-chevron-right"></i>';
+            btnNext.classList.remove('execute');
+        }
+    }
+}
+
+// ─── IG: setup do step de configuração ───────────────────────
+function mwSetupIGConfig() {
+    const type = document.querySelector('input[name="mwIGType"]:checked')?.value || 'profile_analysis';
+    mwState.igType = type;
+
+    ['mwFgTarget','mwFgPosts','mwFgMulti','mwFgPostUrl','mwFgKeywords'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.style.display = 'none';
+    });
+    const show = id => { const el = document.getElementById(id); if (el) el.style.display = 'block'; };
+    const lblEl  = document.getElementById('mwLblTarget');
+    const tgtEl  = document.getElementById('mwIGTarget');
+    const dscEl  = document.getElementById('mwConfigDesc');
+
+    const desc = {
+        profile_analysis: 'Análise completa: seguidores + curtidores + comentaristas',
+        recent_likes:     'Quem curtiu os últimos posts do perfil',
+        comments:         'Comentaristas de um post específico',
+        common_followers: 'Quem segue 2 ou mais dos perfis informados',
+        followers:        'Seguidores de um perfil',
+        hashtag:          'Encontra por profissão, nicho ou palavras-chave',
+        likes:            'Quem curtiu um post específico',
+    };
+    if (dscEl) dscEl.textContent = desc[type] || '';
+
+    switch (type) {
+        case 'profile_analysis':
+            show('mwFgTarget'); show('mwFgPosts');
+            if (lblEl) lblEl.textContent = 'Perfil do Concorrente';
+            if (tgtEl) tgtEl.placeholder = '@usuario ou URL do perfil';
+            break;
+        case 'recent_likes':
+            show('mwFgTarget'); show('mwFgPosts');
+            if (lblEl) lblEl.textContent = 'Perfil do Instagram';
+            if (tgtEl) tgtEl.placeholder = '@usuario ou URL do perfil';
+            break;
+        case 'comments': case 'likes':
+            show('mwFgPostUrl'); break;
+        case 'common_followers':
+            show('mwFgMulti'); break;
+        case 'followers':
+            show('mwFgTarget');
+            if (lblEl) lblEl.textContent = 'Perfil do Instagram';
+            if (tgtEl) tgtEl.placeholder = '@usuario ou URL do perfil';
+            break;
+        case 'hashtag':
+            show('mwFgTarget'); show('mwFgKeywords');
+            if (lblEl) lblEl.textContent = 'Perfil alvo para varrer';
+            if (tgtEl) tgtEl.placeholder = '@perfil ou URL do Instagram';
+            break;
+    }
+}
+
+// ─── Autocomplete CNAE do wizard ──────────────────────────────
+function mwFilterCnae(query) {
+    const drop = document.getElementById('mwCnaeDropdown');
+    if (!drop) return;
+    if (!query || query.length < 2) { drop.style.display = 'none'; return; }
+    const q = query.toLowerCase();
+    const matches = state.cnaeList.filter(c =>
+        c.desc.toLowerCase().includes(q) || c.code.startsWith(q)
+    ).slice(0, 8);
+    if (!matches.length) { drop.style.display = 'none'; return; }
+    drop.innerHTML = matches.map(c =>
+        `<div class="cnae-item" onclick="mwSelectCnae('${c.code}','${c.desc.replace(/'/g,"\\'")}')">
+            <strong>${c.code}</strong> — ${c.desc}
+         </div>`
+    ).join('');
+    drop.style.display = 'block';
+}
+
+function mwSelectCnae(code, desc) {
+    const sel  = document.getElementById('mwCnaeSelected');
+    const srch = document.getElementById('mwCnaeSearch');
+    const lbl  = document.getElementById('mwCnaeLabel');
+    const drop = document.getElementById('mwCnaeDropdown');
+    if (sel)  sel.value          = code;
+    if (srch) srch.value         = desc;
+    if (lbl)  lbl.textContent    = `Código: ${code}`;
+    if (drop) drop.style.display = 'none';
+}
+
+// ─── Bootstrap ────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', mwInit);

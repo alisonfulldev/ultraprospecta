@@ -6,6 +6,7 @@ const crypto   = require('crypto');
 const Stripe   = require('stripe');
 const { IgApiClient, IgCheckpointError } = require('instagram-private-api');
 const { getDb } = require('./db');
+let puppeteer; try { puppeteer = require('puppeteer'); } catch { puppeteer = null; }
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY || '');
 
@@ -262,9 +263,10 @@ app.post('/api/logout', (req, res) => {
 app.post('/api/login-cookie', (req, res) => {
     const { sessionid, username, csrftoken, dsUserId } = req.body;
     if (!sessionid) return res.status(400).json({ error: 'sessionid obrigatório' });
-    if (!username)  return res.status(400).json({ error: 'Usuário obrigatório' });
-    setIg(req, { loggedIn: true, username: username.trim().replace('@',''), sessionid: sessionid.trim(), csrftoken: (csrftoken||'').trim(), dsUserId: (dsUserId||'').trim() });
-    return res.json({ success: true, user: { username: username.trim().replace('@','') } });
+    // username é opcional — usa dsUserId como fallback para não bloquear login automático via browser
+    const user = (username || dsUserId || 'usuario').trim().replace('@', '');
+    setIg(req, { loggedIn: true, username: user, sessionid: sessionid.trim(), csrftoken: (csrftoken||'').trim(), dsUserId: (dsUserId||'').trim() });
+    return res.json({ success: true, user: { username: user } });
 });
 
 app.post('/api/login', async (req, res) => {
@@ -715,6 +717,139 @@ app.get('/api/cnpj/search', (req, res) => {
         send({ type: 'error', message: err.message });
     }
     res.end();
+});
+
+// ============================================
+// Instagram Browser Login (Puppeteer)
+// ============================================
+
+const igBrowserState = { browser: null, page: null, status: 'idle', data: null, pollTimer: null };
+
+async function igBrowserCleanup() {
+    if (igBrowserState.pollTimer) { clearInterval(igBrowserState.pollTimer); igBrowserState.pollTimer = null; }
+    if (igBrowserState.browser) {
+        try { await igBrowserState.browser.close(); } catch {}
+        igBrowserState.browser = null;
+        igBrowserState.page    = null;
+    }
+}
+
+// POST /api/ig-auth/browser-login — abre navegador Chrome controlado
+app.post('/api/ig-auth/browser-login', async (req, res) => {
+    if (!puppeteer) return res.status(503).json({ success: false, error: 'Puppeteer não instalado. Reinicie o servidor.' });
+
+    await igBrowserCleanup();
+    igBrowserState.status = 'opening';
+    igBrowserState.data   = null;
+
+    try {
+        const browser = await puppeteer.launch({
+            headless: false,
+            defaultViewport: null,
+            args: [
+                '--window-size=430,750',
+                '--window-position=100,80',
+                '--disable-notifications',
+                '--disable-infobars',
+                '--no-default-browser-check',
+                '--app=https://www.instagram.com/accounts/login/',
+            ],
+        });
+
+        igBrowserState.browser = browser;
+        igBrowserState.status  = 'waiting';
+
+        const pages = await browser.pages();
+        const page  = pages[0] || await browser.newPage();
+        igBrowserState.page = page;
+
+        // Navegar para login se ainda não estiver lá
+        const url = page.url();
+        if (!url.includes('instagram.com')) {
+            await page.goto('https://www.instagram.com/accounts/login/', { waitUntil: 'domcontentloaded' });
+        }
+
+        // Polling: detectar quando o usuário logou (saiu da tela de login)
+        igBrowserState.pollTimer = setInterval(async () => {
+            try {
+                if (!igBrowserState.browser) { clearInterval(igBrowserState.pollTimer); return; }
+
+                const currentUrl = page.url();
+                const cookies    = await page.cookies('https://www.instagram.com');
+                const sessionid  = cookies.find(c => c.name === 'sessionid' && c.value?.length > 10);
+
+                const loggedIn = sessionid && !currentUrl.includes('/accounts/login') &&
+                                 !currentUrl.includes('/challenge') &&
+                                 !currentUrl.includes('/two_factor');
+
+                if (loggedIn && igBrowserState.status === 'waiting') {
+                    clearInterval(igBrowserState.pollTimer);
+                    igBrowserState.pollTimer = null;
+
+                    const csrftoken  = cookies.find(c => c.name === 'csrftoken');
+                    const dsUserId   = cookies.find(c => c.name === 'ds_user_id');
+
+                    // Tentar extrair username da página
+                    let username = '';
+                    try {
+                        username = await page.evaluate(() => {
+                            const sel = [
+                                'span[class*="xdpxx0"]',
+                                '[data-testid="user-avatar"]',
+                                'a[href^="/"][role="link"] span',
+                            ];
+                            for (const s of sel) {
+                                const el = document.querySelector(s);
+                                if (el?.textContent?.trim()) return el.textContent.trim();
+                            }
+                            // Fallback: URL do avatar
+                            const meta = document.querySelector('meta[property="og:description"]');
+                            if (meta?.content) return meta.content.split('@')[1]?.split(' ')[0] || '';
+                            return '';
+                        });
+                    } catch {}
+
+                    igBrowserState.data = {
+                        sessionid: sessionid.value,
+                        csrftoken: csrftoken?.value || '',
+                        dsUserId:  dsUserId?.value  || '',
+                        username,
+                    };
+                    igBrowserState.status = 'done';
+
+                    // Fechar navegador após breve pausa (mostra sucesso)
+                    setTimeout(igBrowserCleanup, 2000);
+                }
+            } catch { /* browser fechado pelo usuário */ igBrowserCleanup(); }
+        }, 1200);
+
+        // Timeout 5 min
+        setTimeout(() => {
+            if (igBrowserState.status === 'waiting') {
+                igBrowserState.status = 'timeout';
+                igBrowserCleanup();
+            }
+        }, 300000);
+
+        res.json({ success: true });
+
+    } catch (err) {
+        igBrowserState.status = 'error';
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// GET /api/ig-auth/browser-status — frontend faz polling
+app.get('/api/ig-auth/browser-status', (req, res) => {
+    const { status, data } = igBrowserState;
+    res.json({ status, data: status === 'done' ? data : null });
+});
+
+// POST /api/ig-auth/browser-cancel — cancela e fecha
+app.post('/api/ig-auth/browser-cancel', async (req, res) => {
+    igBrowserState.status = 'cancelled';
+    await igBrowserCleanup();
+    res.json({ success: true });
 });
 
 // ============================================
