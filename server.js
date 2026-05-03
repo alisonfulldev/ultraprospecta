@@ -379,15 +379,75 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), (req
 });
 
 // ============================================
+// PROFILE CHECK — valida seguidores antes de capturar
+// ============================================
+app.get('/api/ig/profile-check', async (req, res) => {
+    const ig = getIg(req);
+    if (!ig.loggedIn) return res.status(401).json({ ok: false, error: 'Não autenticado' });
+
+    const { username } = req.query;
+    if (!username) return res.status(400).json({ ok: false, error: 'username obrigatório' });
+
+    try {
+        const web = igWebClient(req);
+        const r   = await web.get('/api/v1/users/web_profile_info/', { params: { username: username.replace('@','') } });
+        if (r.status === 302 || r.status === 401)
+            return res.json({ ok: false, error: 'Sessão expirada. Reconecte o Instagram.' });
+        const user = r.data?.data?.user;
+        if (!user) return res.json({ ok: false, error: `Perfil @${username} não encontrado ou é privado.` });
+
+        const followers = user.edge_followed_by?.count || 0;
+        res.json({ ok: true, followers, username: user.username });
+    } catch (err) {
+        res.json({ ok: false, error: err.message });
+    }
+});
+
+// Helper: completa leads com seguidores até atingir o target
+async function autoFillFollowers(web, mobile, userId, username, sentIds, target, shouldFetchBio, delayTime, sendLead, send, stoppedFn) {
+    const needed = target - sentIds.size;
+    if (needed <= 0) return;
+    send({ type: 'log', message: `Completando com ${needed} seguidores adicionais de @${username}...` });
+    let maxId = null, filled = 0;
+    for (let pg = 0; pg < 20 && filled < needed && !stoppedFn(); pg++) {
+        try {
+            const r = await web.get(`/api/v1/friendships/${userId}/followers/`, { params: { count: 50, ...(maxId ? { max_id: maxId } : {}) } });
+            igAssert(r.data, 'auto-fill');
+            const users = r.data?.users || [];
+            if (!users.length) break;
+            for (const u of users) {
+                if (filled >= needed || stoppedFn()) break;
+                const id = String(u.pk);
+                if (sentIds.has(id)) continue;
+                sentIds.add(id);
+                const lead = buildLead(u, '', '', `seguidor @${username}`);
+                lead.isFollower = true;
+                if (shouldFetchBio) {
+                    const d = await fetchBio(web, mobile, u.pk, u.username);
+                    enrichLead(lead, d);
+                    await sleep(delayTime);
+                }
+                sendLead(lead);
+                filled++;
+            }
+            maxId = r.data?.next_max_id;
+            if (!maxId) break;
+            await sleep(800);
+        } catch { break; }
+    }
+    if (filled > 0) send({ type: 'log', message: `✓ +${filled} seguidores adicionados` });
+}
+
+// ============================================
 // CAPTURE — SSE  (créditos controlados pelo cliente/localStorage)
 // ============================================
 app.get('/api/capture', async (req, res) => {
     const ig = getIg(req);
     if (!ig.loggedIn) return res.status(401).json({ error: 'Conecte sua conta do Instagram primeiro' });
 
-    const { type='followers', target='', quantity='200', delay:delayMs='1500', fetchBio:fetchBioParam='false', posts='10' } = req.query;
-    const maxLeads       = Math.min(parseInt(quantity)||200, 2000);
-    const delayTime      = Math.max(parseInt(delayMs)||1500, 1000); // mínimo 1s entre requests
+    const { type='followers', target='', delay:delayMs='1500', fetchBio:fetchBioParam='false', posts='10' } = req.query;
+    const maxLeads       = 50; // fixo — 1 crédito = 50 leads
+    const delayTime      = Math.max(parseInt(delayMs)||1500, 1000);
     const shouldFetchBio = fetchBioParam === 'true';
     const postsCount     = Math.min(parseInt(posts)||10, 30);
 
@@ -463,7 +523,12 @@ app.get('/api/capture', async (req, res) => {
             }
             leads.sort((a,b)=>score(b)-score(a));
             send({type:'log',message:`✓ ${leads.length} leads. Enviando...`});
-            let count=0;for(const lead of leads){if(count>=maxLeads||stopped)break;sendLead(lead);count++;}
+            const sentIds = new Set();
+            let count=0;for(const lead of leads){if(count>=maxLeads||stopped)break;sendLead(lead);sentIds.add(lead.id);count++;}
+            // Auto-fill se menos de 50 leads qualificados
+            if (count < maxLeads && !stopped) {
+                await autoFillFollowers(web, mobile, userId, username, sentIds, maxLeads, shouldFetchBio, delayTime, sendLead, send, ()=>stopped);
+            }
 
         } else if (type==='followers') {
             const username=extractUsername(target);
@@ -522,6 +587,13 @@ app.get('/api/capture', async (req, res) => {
                     }
                 }catch(e){send({type:'log',message:`⚠️ Post ${i+1}: ${e.message}`});}
                 await sleep(delayTime);
+            }
+            // Auto-fill se likers < 50
+            if (count < maxLeads && !stopped) {
+                try {
+                    const { userId: rlUid } = await getUserId(web, username);
+                    await autoFillFollowers(web, mobile, rlUid, username, seen, maxLeads, shouldFetchBio, delayTime, sendLead, send, ()=>stopped);
+                } catch {}
             }
 
         } else if (type==='comments') {
@@ -583,6 +655,13 @@ app.get('/api/capture', async (req, res) => {
             for(let i=0;i<quick.length&&count<maxLeads&&!stopped;i+=B){const bt=quick.slice(i,i+B);const bs=await Promise.all(bt.map(u=>fetchBio(web,mobile,String(u.pk||u.id),u.username)));let ok=true;bt.forEach((u,j)=>{if(ok)ok=emit(u,bs[j])!==false;});if(!ok)break;await sleep(800);}
             let bc=0;
             for(let i=0;i<needBio.length&&count<maxLeads&&!stopped;i+=B){const bt=needBio.slice(i,i+B);const bs=await Promise.all(bt.map(u=>fetchBio(web,mobile,String(u.pk||u.id),u.username)));let ok=true;bt.forEach((u,j)=>{if(ok&&matchProf(u,bs[j]))ok=emit(u,bs[j])!==false;});bc+=bt.length;if(!ok)break;if(bc%40===0||i+B>=needBio.length)send({type:'log',message:`Bio: ${bc}/${needBio.length} — ${count} encontrados`});await sleep(800);}
+            // Auto-fill com seguidores se busca retornou menos de 50
+            if (count < maxLeads && !stopped) {
+                try {
+                    const htSeen = new Set(seen);
+                    await autoFillFollowers(web, mobile, targetId, profileTarget, htSeen, maxLeads, false, delayTime, sendLead, send, ()=>stopped);
+                } catch {}
+            }
 
         } else if (type==='common_followers') {
             const usernames=target.split(',').map(u=>u.trim().replace('@','')).filter(Boolean);

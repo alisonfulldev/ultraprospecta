@@ -67,7 +67,21 @@ function updateCreditsUI() {
         dispCNPJ.style.display = cnpj > 0 ? 'flex' : 'none';
         dispCNPJ.classList.toggle('credits-low', cnpj > 0 && cnpj <= 10);
     }
-    if (buyBtn) buyBtn.style.display = 'inline-flex';
+    // Botão de compra: só mostra quando todos os créditos do tipo ativo estão zerados
+    if (buyBtn) {
+        const activeType = state.activeSource === 'cnpj' ? 'cnpj' : 'instagram';
+        if (canBuyPack(activeType)) {
+            buyBtn.style.display = 'inline-flex';
+            buyBtn.disabled = false;
+            buyBtn.title = '';
+        } else {
+            const rem = activeType === 'cnpj' ? getCreditsCNPJ() : getCreditsIG();
+            buyBtn.style.display = 'inline-flex';
+            buyBtn.disabled = true;
+            buyBtn.title = 'Use seus ' + rem + ' creditos antes de comprar mais';
+            buyBtn.style.opacity = '.4';
+        }
+    }
 }
 
 // ============================================
@@ -169,10 +183,30 @@ function cnpjUFChanged() { /* placeholder para futura busca de municípios */ }
 // ============================================
 // Buy Modal
 // ============================================
+
+function canBuyPack(type) {
+    if (type === 'cnpj')      return getCreditsCNPJ() === 0;
+    if (type === 'instagram') return getCreditsIG()   === 0;
+    return getCreditsIG() === 0 && getCreditsCNPJ() === 0;
+}
+
 function openBuyModal() {
-    document.getElementById('buyError').style.display = 'none';
-    // Pré-seleciona o pack da fonte ativa
-    selectPack(state.activeSource === 'cnpj' ? 'cnpj' : 'instagram');
+    const type    = state.activeSource === 'cnpj' ? 'cnpj' : 'instagram';
+    const credits = type === 'cnpj' ? getCreditsCNPJ() : getCreditsIG();
+    const errEl   = document.getElementById('buyError');
+    const btn     = document.getElementById('btnCheckout');
+
+    errEl.style.display = 'none';
+    selectPack(type);
+
+    if (!canBuyPack(type)) {
+        errEl.textContent = 'Voce ainda tem ' + credits + ' credito' + (credits > 1 ? 's' : '') + ' disponivel' + (credits > 1 ? 'is' : '') + '. Use todos os seus leads antes de comprar mais.';
+        errEl.style.display = 'block';
+        if (btn) { btn.disabled = true; btn.style.opacity = '.4'; }
+    } else {
+        if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    }
+
     document.getElementById('buyModal').classList.add('active');
 }
 
@@ -194,15 +228,25 @@ function selectPack(type) {
 
 function simulatePayment() {
     const type = state.selectedPackType || 'instagram';
-    const n    = type === 'cnpj' ? 50 : 100;
+    if (!canBuyPack(type)) {
+        const rem = type === 'cnpj' ? getCreditsCNPJ() : getCreditsIG();
+        showToast('Use seus ' + rem + ' creditos restantes antes de comprar mais.', 'warning');
+        return;
+    }
+    const n = 50;
     addCredits(n, type);
     closeBuyModal();
-    showToast(`✅ ${n} leads ${type === 'cnpj' ? 'CNPJ' : 'Instagram'} adicionados (modo teste)`, 'success');
+    showToast(n + ' leads ' + (type === 'cnpj' ? 'CNPJ' : 'Instagram') + ' adicionados (modo teste)', 'success');
 }
 
 async function goToCheckout() {
-    const btn  = document.getElementById('btnCheckout');
     const type = state.selectedPackType || 'instagram';
+    if (!canBuyPack(type)) {
+        const rem = type === 'cnpj' ? getCreditsCNPJ() : getCreditsIG();
+        showToast('Use seus ' + rem + ' creditos restantes antes de comprar mais.', 'warning');
+        return;
+    }
+    const btn  = document.getElementById('btnCheckout');
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Aguarde...';
     document.getElementById('buyError').style.display = 'none';
@@ -524,7 +568,7 @@ async function startCapture() {
     }
 
     const { type, target, posts, profileTarget } = getCurrentConfig();
-    const quantity  = parseInt(document.getElementById('quantity').value) || 200;
+    const quantity  = 50;
     const fetchBio  = document.getElementById('extractWhatsApp').checked || document.getElementById('extractEmail').checked;
 
     if (type === 'hashtag' && !profileTarget) { showToast('Informe o perfil alvo para varrer', 'error'); return; }
@@ -617,7 +661,7 @@ function startCaptureCNPJ() {
     const cnae     = document.getElementById('cnaeSelected').value.trim();
     const uf       = document.getElementById('cnpjUF').value.trim();
     const city     = document.getElementById('cnpjCity').value.trim();
-    const quantity = Math.min(parseInt(document.getElementById('cnpjQuantity').value) || 50, 50);
+    const quantity = 50;
     const hasPhone  = document.getElementById('cnpjHasPhone').checked;
     const hasMobile = document.getElementById('cnpjHasMobile').checked;
     const hasEmail  = document.getElementById('cnpjHasEmail').checked;
@@ -1560,6 +1604,12 @@ function mwSetupCreditsStep(source) {
         if (iconEl)  iconEl.className     = 'mw-hero-icon mw-icon-success';
         if (iconEl)  iconEl.innerHTML     = '<i class="fas fa-check-circle"></i>';
         if (titleEl) titleEl.textContent  = 'Créditos OK!';
+        // Esconder botão de compra quando tem créditos (regra de sessão)
+        const buyBtnEl = isIG
+            ? document.querySelector('#mwIGNoCredits .mw-btn-next')
+            : document.querySelector('#mwCNPJNoCredits .mw-btn-next');
+        if (buyBtnEl) buyBtnEl.style.display = 'none';
+
         // Auto-avança após breve exibição
         setTimeout(() => {
             if (mwState.currentStep === (isIG ? 'ig_credits' : 'cnpj_credits')) {
@@ -1578,8 +1628,24 @@ function mwSetupCreditsStep(source) {
     mwUpdateFooter(mwState.currentStep);
 }
 
-function mwBuyCreditsIG()   { selectPack('instagram'); openBuyModal(); }
-function mwBuyCreditsCNPJ() { selectPack('cnpj');      openBuyModal(); }
+function mwBuyCreditsIG() {
+    if (!canBuyPack('instagram')) {
+        const rem = getCreditsIG();
+        showToast('Use seus ' + rem + ' creditos IG antes de comprar mais.', 'warning');
+        return;
+    }
+    selectPack('instagram');
+    openBuyModal();
+}
+function mwBuyCreditsCNPJ() {
+    if (!canBuyPack('cnpj')) {
+        const rem = getCreditsCNPJ();
+        showToast('Use seus ' + rem + ' creditos CNPJ antes de comprar mais.', 'warning');
+        return;
+    }
+    selectPack('cnpj');
+    openBuyModal();
+}
 
 // ─── Step: Login Instagram ────────────────────────────────────
 function mwRefreshLoginStep() {
@@ -1736,6 +1802,34 @@ async function mwExecute() {
         if (!loadIgSession()?.loggedIn) {
             showToast('Conecte o Instagram antes de capturar', 'error'); return;
         }
+        // Validar tamanho do perfil alvo (regra: 50-10.000 seguidores)
+        const igType = mwState.igType;
+        const needsProfileCheck = ['profile_analysis','recent_likes','followers','hashtag'].includes(igType);
+        if (needsProfileCheck) {
+            const rawTarget = igType === 'hashtag'
+                ? (document.getElementById('mwIGTarget')?.value || '').trim()
+                : (document.getElementById('mwIGTarget')?.value || '').trim();
+            const cleanTarget = rawTarget.replace('@','').split('/').filter(Boolean).pop() || '';
+            if (cleanTarget) {
+                try {
+                    const chk = await fetch('/api/ig/profile-check?username=' + encodeURIComponent(cleanTarget));
+                    const chkData = await chk.json();
+                    if (chkData.ok) {
+                        const f = chkData.followers;
+                        if (f < 50) {
+                            showToast('O perfil @' + cleanTarget + ' tem ' + f + ' seguidores — muito pequeno. O perfil deve ter entre 50 e 10.000 seguidores.', 'error');
+                            mwGoToStep('ig_config'); return;
+                        }
+                        if (f > 10000) {
+                            showToast('O perfil @' + cleanTarget + ' tem ' + f.toLocaleString('pt-BR') + ' seguidores — acima do limite. Escolha um perfil com ate 10.000 seguidores.', 'error');
+                            mwGoToStep('ig_config'); return;
+                        }
+                    }
+                    // Se o check falhar (erro de rede etc.), deixa prosseguir
+                } catch {}
+            }
+        }
+
         // Garantir sessão server-side ativa (pode ter expirado por restart do servidor)
         try {
             const statusRes  = await fetch('/api/status');
@@ -2120,6 +2214,55 @@ function mwSelectCnae(code, desc) {
     if (srch) srch.value         = desc;
     if (lbl)  lbl.textContent    = `Código: ${code}`;
     if (drop) drop.style.display = 'none';
+}
+
+// ─── Menu Hambúrguer ──────────────────────────────────────────
+function mwOpenMenu() {
+    const panel   = document.getElementById('mwMenuPanel');
+    const overlay = document.getElementById('mwMenuOverlay');
+    if (!panel || !overlay) return;
+
+    // Atualiza créditos
+    const ig   = getCreditsIG();
+    const cnpj = getCreditsCNPJ();
+    const credIG   = document.getElementById('mwMenuCredIG');
+    const credCNPJ = document.getElementById('mwMenuCredCNPJ');
+    if (credIG)   credIG.textContent   = ig;
+    if (credCNPJ) credCNPJ.textContent = cnpj;
+
+    // Seção de compra: só mostra se todos zerados
+    const buySection = document.getElementById('mwMenuBuySection');
+    if (buySection) buySection.style.display = (ig === 0 && cnpj === 0) ? 'block' : 'none';
+
+    // Status do Instagram
+    const session = loadIgSession();
+    const dot  = document.getElementById('mwMenuIGDot');
+    const text = document.getElementById('mwMenuIGText');
+    const btn  = document.getElementById('mwMenuIGBtn');
+    if (dot && text && btn) {
+        if (session?.loggedIn) {
+            dot.className    = 'mw-menu-ig-dot online';
+            text.textContent = '@' + (session.username || 'conectado');
+            btn.textContent  = 'Desconectar';
+            btn.onclick = () => { mwCloseMenu(); logout(); };
+        } else {
+            dot.className    = 'mw-menu-ig-dot offline';
+            text.textContent = 'Não conectado';
+            btn.textContent  = 'Conectar';
+            btn.onclick = () => { mwCloseMenu(); openLoginModal(); };
+        }
+    }
+
+    overlay.style.display = 'block';
+    requestAnimationFrame(() => panel.classList.add('open'));
+}
+
+function mwCloseMenu() {
+    const panel   = document.getElementById('mwMenuPanel');
+    const overlay = document.getElementById('mwMenuOverlay');
+    if (!panel || !overlay) return;
+    panel.classList.remove('open');
+    setTimeout(() => { overlay.style.display = 'none'; }, 280);
 }
 
 // ─── Bootstrap ────────────────────────────────────────────────
