@@ -42,6 +42,11 @@ function addCredits(n, type) {
             ), 600);
         }
     }
+    // Após compra: re-executa o step de créditos do wizard para auto-avançar
+    setTimeout(() => {
+        if (mwState.currentStep === 'ig_credits'   && t !== 'cnpj') mwSetupCreditsStep('ig');
+        if (mwState.currentStep === 'cnpj_credits' && t === 'cnpj')  mwSetupCreditsStep('cnpj');
+    }, 350);
 }
 
 function updateCreditsUI() {
@@ -67,20 +72,11 @@ function updateCreditsUI() {
         dispCNPJ.style.display = cnpj > 0 ? 'flex' : 'none';
         dispCNPJ.classList.toggle('credits-low', cnpj > 0 && cnpj <= 10);
     }
-    // Botão de compra: só mostra quando todos os créditos do tipo ativo estão zerados
     if (buyBtn) {
-        const activeType = state.activeSource === 'cnpj' ? 'cnpj' : 'instagram';
-        if (canBuyPack(activeType)) {
-            buyBtn.style.display = 'inline-flex';
-            buyBtn.disabled = false;
-            buyBtn.title = '';
-        } else {
-            const rem = activeType === 'cnpj' ? getCreditsCNPJ() : getCreditsIG();
-            buyBtn.style.display = 'inline-flex';
-            buyBtn.disabled = true;
-            buyBtn.title = 'Use seus ' + rem + ' creditos antes de comprar mais';
-            buyBtn.style.opacity = '.4';
-        }
+        buyBtn.style.display = 'inline-flex';
+        buyBtn.disabled = false;
+        buyBtn.style.opacity = '';
+        buyBtn.title = '';
     }
 }
 
@@ -106,8 +102,92 @@ const state = {
     segmentReachable: false,
     activeSource: 'instagram', // 'instagram' | 'cnpj'
     cnaeList: [],
-    selectedPackType: 'instagram'
+    selectedPackType: 'instagram',
+    pendingLeads: [],
+    duplicatesSkipped: 0
 };
+
+// ============================================
+// Lead History — Deduplicação cross-session
+// ============================================
+const LEAD_HISTORY_KEY    = 'up_lead_history';
+const COMPETITOR_HIST_KEY = 'up_competitor_hist';
+const MAX_LEAD_HISTORY    = 5000;
+
+function getLeadHistory() {
+    try { return JSON.parse(localStorage.getItem(LEAD_HISTORY_KEY) || '[]'); } catch { return []; }
+}
+function isLeadInHistory(id) {
+    const sid = String(id);
+    return getLeadHistory().some(item => item.id === sid);
+}
+function addLeadToHistory(lead) {
+    const h = getLeadHistory();
+    const sid = String(lead.id);
+    if (h.some(item => item.id === sid)) return;
+    h.push({ id: sid, ts: Date.now() });
+    if (h.length > MAX_LEAD_HISTORY) h.splice(0, h.length - MAX_LEAD_HISTORY);
+    localStorage.setItem(LEAD_HISTORY_KEY, JSON.stringify(h));
+}
+function getLeadHistoryCount() { return getLeadHistory().length; }
+function clearLeadHistory() {
+    localStorage.removeItem(LEAD_HISTORY_KEY);
+    showToast('Histórico limpo — próximas capturas podem trazer leads já vistos.', 'info', 5000);
+    updateHistoryInfo();
+}
+
+function getCompetitorHist() {
+    try { return JSON.parse(localStorage.getItem(COMPETITOR_HIST_KEY) || '{}'); } catch { return {}; }
+}
+function normalizeTarget(t) {
+    return (t || '').toLowerCase()
+        .replace(/^@/, '')
+        .replace(/^https?:\/\/(?:www\.)?instagram\.com\//i, '')
+        .replace(/\/.*$/, '')
+        .trim();
+}
+function recordCompetitorUse(target) {
+    const h   = getCompetitorHist();
+    const key = normalizeTarget(target);
+    if (!key) return;
+    if (!h[key]) h[key] = { count: 0, last: 0 };
+    h[key].count++;
+    h[key].last = Date.now();
+    localStorage.setItem(COMPETITOR_HIST_KEY, JSON.stringify(h));
+}
+function checkCompetitorRepeat(target) {
+    const h   = getCompetitorHist();
+    const key = normalizeTarget(target);
+    return (h[key]?.count >= 1) ? h[key] : null;
+}
+
+function updateHistoryInfo() {
+    const el = document.getElementById('historyInfo');
+    if (!el) return;
+    const count = getLeadHistoryCount();
+    el.style.display = count > 0 ? 'flex' : 'none';
+    const span = document.getElementById('historyCount');
+    if (span) span.textContent = count;
+}
+
+function maskUsername(username) {
+    const clean = (username || '').replace(/^@/, '');
+    if (!clean) return '***';
+    const show = Math.max(2, Math.min(3, Math.floor(clean.length * 0.35)));
+    return '@' + clean.slice(0, show) + '***';
+}
+
+function updateDupBadge() {
+    const el = document.getElementById('dupBadge');
+    if (!el) return;
+    const n = state.duplicatesSkipped;
+    if (n > 0) {
+        el.style.display = 'inline-flex';
+        el.textContent = `${n} duplicado${n > 1 ? 's' : ''} ignorado${n > 1 ? 's' : ''}`;
+    } else {
+        el.style.display = 'none';
+    }
+}
 
 // ============================================
 // Source Toggle (Instagram / CNPJ)
@@ -184,11 +264,6 @@ function cnpjUFChanged() { /* placeholder para futura busca de municípios */ }
 // Buy Modal
 // ============================================
 
-function canBuyPack(type) {
-    if (type === 'cnpj')      return getCreditsCNPJ() === 0;
-    if (type === 'instagram') return getCreditsIG()   === 0;
-    return getCreditsIG() === 0 && getCreditsCNPJ() === 0;
-}
 
 function openBuyModal() {
     const type    = state.activeSource === 'cnpj' ? 'cnpj' : 'instagram';
@@ -198,14 +273,7 @@ function openBuyModal() {
 
     errEl.style.display = 'none';
     selectPack(type);
-
-    if (!canBuyPack(type)) {
-        errEl.textContent = 'Voce ainda tem ' + credits + ' credito' + (credits > 1 ? 's' : '') + ' disponivel' + (credits > 1 ? 'is' : '') + '. Use todos os seus leads antes de comprar mais.';
-        errEl.style.display = 'block';
-        if (btn) { btn.disabled = true; btn.style.opacity = '.4'; }
-    } else {
-        if (btn) { btn.disabled = false; btn.style.opacity = ''; }
-    }
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
 
     document.getElementById('buyModal').classList.add('active');
 }
@@ -228,11 +296,6 @@ function selectPack(type) {
 
 function simulatePayment() {
     const type = state.selectedPackType || 'instagram';
-    if (!canBuyPack(type)) {
-        const rem = type === 'cnpj' ? getCreditsCNPJ() : getCreditsIG();
-        showToast('Use seus ' + rem + ' creditos restantes antes de comprar mais.', 'warning');
-        return;
-    }
     const n = 50;
     addCredits(n, type);
     closeBuyModal();
@@ -241,11 +304,6 @@ function simulatePayment() {
 
 async function goToCheckout() {
     const type = state.selectedPackType || 'instagram';
-    if (!canBuyPack(type)) {
-        const rem = type === 'cnpj' ? getCreditsCNPJ() : getCreditsIG();
-        showToast('Use seus ' + rem + ' creditos restantes antes de comprar mais.', 'warning');
-        return;
-    }
     const btn  = document.getElementById('btnCheckout');
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Aguarde...';
@@ -574,12 +632,35 @@ async function startCapture() {
     if (type === 'hashtag' && !profileTarget) { showToast('Informe o perfil alvo para varrer', 'error'); return; }
     if (!target) { showToast('Informe o alvo da captura', 'error'); return; }
 
-    state.isCapturing = true;
-    state.startTime   = new Date();
+    // Detecta link de perfil colado em modos que exigem URL de post
+    const looksLikeProfile = /instagram\.com\/[^/?#]+\/?(\?.*)?$/.test(target) && !/\/p\/|\/reel\//.test(target);
+    if ((type === 'comments' || type === 'likes') && looksLikeProfile) {
+        const modeLabel = type === 'comments' ? 'Comentaristas de um post' : 'Curtidores de um post';
+        showToast(`O modo "${modeLabel}" exige a URL de um post (ex: instagram.com/p/CODIGO), não de um perfil. Para extrair de um perfil use "Análise Completa" ou "Curtidores Recentes".`, 'error', 10000);
+        return;
+    }
+
+    state.isCapturing      = true;
+    state.startTime        = new Date();
+    state.pendingLeads     = [];
+    state.duplicatesSkipped = 0;
     updateCaptureUI(true);
     document.getElementById('progressContainer').style.display = 'block';
     setCaptureStatus('Capturando...', true);
     startTimer();
+    updateDupBadge();
+
+    // Aviso se o perfil já foi usado antes
+    const watchTarget = target || profileTarget;
+    const repeat = checkCompetitorRepeat(watchTarget);
+    if (repeat) {
+        const fmt = new Date(repeat.last).toLocaleDateString('pt-BR');
+        showToast(
+            `Atenção: este perfil já foi capturado antes (última vez: ${fmt}). Leads já extraídos serão ignorados automaticamente — você não será cobrado por duplicatas.`,
+            'warning', 10000
+        );
+    }
+    recordCompetitorUse(watchTarget);
 
     const params = new URLSearchParams({ type, target, quantity, fetchBio: fetchBio ? 'true' : 'false', posts });
     if (profileTarget) params.set('profileTarget', profileTarget);
@@ -589,29 +670,26 @@ async function startCapture() {
     es.onmessage = e => {
         const data = JSON.parse(e.data);
         if (data.type === 'lead') {
-            if (state.leads.some(l => l.id === data.lead.id)) return; // dedup
+            // Dedup: mesmo lead na sessão atual
+            if (state.leads.some(l => l.id === data.lead.id)) return;
+            if (state.pendingLeads.some(l => l.id === data.lead.id)) return;
 
-            // Deduz 1 crédito do localStorage a cada lead recebido
-            const remaining = getCreditsIG() - 1;
-            setCreditsIG(remaining);
-
-            data.lead.score = calculateScore(data.lead);
-            state.leads.push(data.lead);
-            updateProgress(state.leads.length, quantity);
-
-            // Parar captura se créditos acabaram
-            if (remaining <= 0) {
-                es.close(); state.eventSource = null;
-                renderAllLeads(); updateCounts();
-                finishCapture(`${state.leads.length} leads capturados — créditos esgotados`, 'warning');
-                setTimeout(() => openBuyModal(), 800);
+            // Dedup cross-session: lead já extraído antes
+            if (isLeadInHistory(data.lead.id)) {
+                state.duplicatesSkipped++;
+                updateDupBadge();
                 return;
             }
 
-            const captureType = document.querySelector('input[name="captureType"]:checked')?.value;
-            if (captureType !== 'profile_analysis') {
-                try { renderRow(data.lead); } catch(e) { console.error('renderRow error:', e); }
-                updateCounts();
+            data.lead.score = calculateScore(data.lead);
+            state.pendingLeads.push(data.lead);
+            updateProgress(state.leads.length + state.pendingLeads.length, quantity);
+
+            // Parar quando atingir o limite de créditos disponíveis
+            if (state.pendingLeads.length >= getCreditsIG()) {
+                es.close(); state.eventSource = null;
+                setProgress(95, `${state.pendingLeads.length} leads prontos para revisar`);
+                openLeadPreviewModal();
             }
         } else if (data.type === 'log') {
             document.getElementById('progressText').textContent = data.message;
@@ -627,11 +705,17 @@ async function startCapture() {
             else if (msg.includes('Enviando'))   setProgress(97, msg);
         } else if (data.type === 'done') {
             es.close(); state.eventSource = null;
-            renderAllLeads();
-            updateCounts();
-            setProgress(100, `${state.leads.length} leads carregados`);
-            finishCapture(`Concluído — ${state.leads.length} leads encontrados`, 'success');
-            updateCreditsUI();
+            setProgress(100, `${state.pendingLeads.length} novos leads prontos`);
+            if (state.pendingLeads.length === 0) {
+                finishCapture(
+                    state.duplicatesSkipped > 0
+                        ? `Nenhum lead novo — ${state.duplicatesSkipped} duplicado${state.duplicatesSkipped > 1 ? 's' : ''} de capturas anteriores foram ignorados`
+                        : 'Nenhum lead encontrado',
+                    'warning'
+                );
+            } else {
+                openLeadPreviewModal();
+            }
         } else if (data.type === 'error') {
             es.close(); state.eventSource = null;
             if (data.message?.includes('Créditos')) openBuyModal();
@@ -649,7 +733,105 @@ async function startCapture() {
 
 function stopCapture() {
     if (state.eventSource) { state.eventSource.close(); state.eventSource = null; }
-    finishCapture('Captura interrompida', 'warning');
+    // Se havia leads em buffer, abre preview; senão apenas cancela
+    if (state.pendingLeads.length > 0) {
+        setProgress(95, `${state.pendingLeads.length} leads prontos para revisar`);
+        openLeadPreviewModal();
+    } else {
+        finishCapture('Captura interrompida', 'warning');
+    }
+}
+
+// ============================================
+// Preview Modal — Aprovação de leads
+// ============================================
+function openLeadPreviewModal() {
+    const pending = state.pendingLeads;
+    const total   = pending.length;
+    const dupCnt  = state.duplicatesSkipped;
+    const avail   = getCreditsIG();
+    const cost    = Math.min(total, avail);
+
+    const costEl = document.getElementById('previewCreditCost');
+    if (costEl) costEl.textContent = cost;
+
+    let meta = `<strong>${total}</strong> lead${total !== 1 ? 's' : ''} novo${total !== 1 ? 's' : ''} encontrado${total !== 1 ? 's' : ''}`;
+    if (dupCnt > 0) {
+        meta += ` &nbsp;&bull;&nbsp; <span class="dup-info">${dupCnt} duplicado${dupCnt > 1 ? 's' : ''} de capturas anteriores foram ignorados automaticamente</span>`;
+    }
+
+    const sorted = [...pending].sort((a, b) => (b.score || 0) - (a.score || 0));
+    let rows = '';
+    sorted.forEach(lead => {
+        const score = lead.score || 0;
+        const { label: slabel, cls } = scoreLabel(score);
+        const wa = lead.whatsapp ? '<i class="fab fa-whatsapp" title="Tem WhatsApp" style="color:#25D366;font-size:1rem"></i>' : '';
+        const em = lead.email    ? '<i class="fas fa-envelope" title="Tem email" style="color:var(--primary);font-size:.85rem"></i>' : '';
+        const contacts = (wa || em) ? wa + em : '<small style="color:var(--gray)">—</small>';
+        rows += `<tr>
+            <td class="prev-user">${maskUsername(lead.username)}</td>
+            <td><span class="score-badge ${cls}" style="font-size:.7rem;padding:.18rem .45rem">${slabel} ${score}pts</span></td>
+            <td class="prev-contacts">${contacts}</td>
+        </tr>`;
+    });
+
+    const body = document.getElementById('previewModalBody');
+    if (body) body.innerHTML = `
+        <p class="preview-meta">${meta}</p>
+        <div class="preview-table-wrap">
+            <table class="preview-table">
+                <thead><tr><th>Usuário (oculto)</th><th>Score</th><th>Contatos</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
+        <p class="preview-note"><i class="fas fa-lock" style="font-size:.75rem"></i> Usernames completos aparecem somente após aprovação</p>
+    `;
+
+    document.getElementById('previewModal').classList.add('active');
+}
+
+function closeLeadPreviewModal() {
+    document.getElementById('previewModal').classList.remove('active');
+}
+
+function approveLeadPreview() {
+    const avail    = getCreditsIG();
+    const toAdd    = state.pendingLeads.slice(0, avail);
+    const leftOver = state.pendingLeads.length - toAdd.length;
+
+    toAdd.forEach(lead => {
+        deductCredit();
+        addLeadToHistory(lead);
+        state.leads.push(lead);
+    });
+
+    state.pendingLeads      = [];
+    state.duplicatesSkipped = 0;
+
+    closeLeadPreviewModal();
+    updateDupBadge();
+    renderAllLeads();
+    updateCounts();
+    updateHistoryInfo();
+
+    let msg = `${toAdd.length} lead${toAdd.length !== 1 ? 's' : ''} adicionado${toAdd.length !== 1 ? 's' : ''} com sucesso`;
+    if (leftOver > 0) msg += ` (${leftOver} descartado${leftOver !== 1 ? 's' : ''} por limite de créditos)`;
+    finishCapture(msg, 'success');
+    updateCreditsUI();
+    if (getCreditsIG() <= 0) setTimeout(() => openBuyModal(), 800);
+}
+
+function rejectLeadPreview() {
+    const cnt = state.pendingLeads.length;
+    state.pendingLeads      = [];
+    state.duplicatesSkipped = 0;
+
+    closeLeadPreviewModal();
+    updateDupBadge();
+    finishCapture(
+        `Captura cancelada — ${cnt} lead${cnt !== 1 ? 's' : ''} descartado${cnt !== 1 ? 's' : ''} sem cobrança`,
+        'warning'
+    );
 }
 
 // ============================================
@@ -1429,6 +1611,29 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('segmentReachable').addEventListener('change',e => { state.segmentReachable= e.target.checked; renderAllLeads(); });
 
     document.getElementById('quantity').addEventListener('input', e => { if (e.target.value > 2000) e.target.value = 2000; if (e.target.value < 1) e.target.value = 1; });
+
+    updateHistoryInfo();
+    window.approveLeadPreview = approveLeadPreview;
+    window.rejectLeadPreview  = rejectLeadPreview;
+    window.clearLeadHistory   = clearLeadHistory;
+
+    // Aviso de créditos pendentes — exibe uma vez por dia
+    setTimeout(() => {
+        const ig   = getCreditsIG();
+        const cnpj = getCreditsCNPJ();
+        const today = new Date().toISOString().slice(0, 10);
+        const lastWarn = localStorage.getItem('up_credit_warn_date');
+        if ((ig > 0 || cnpj > 0) && lastWarn !== today) {
+            localStorage.setItem('up_credit_warn_date', today);
+            const partes = [];
+            if (ig   > 0) partes.push(`${ig} Instagram`);
+            if (cnpj > 0) partes.push(`${cnpj} CNPJ`);
+            showToast(
+                `Você ainda tem ${partes.join(' e ')} crédito${(ig + cnpj) > 1 ? 's' : ''} disponível${(ig + cnpj) > 1 ? 'is' : ''}. Use-os em breve — créditos ficam salvos no navegador e podem ser perdidos se você limpar os dados do site.`,
+                'warning', 10000
+            );
+        }
+    }, 1500);
 });
 
 window.deleteLead = deleteLead;
@@ -1624,25 +1829,20 @@ function mwSetupCreditsStep(source) {
             iconEl.innerHTML = '<i class="fas fa-coins"></i>';
         }
         if (titleEl) titleEl.textContent = 'Sem créditos';
+        // Garante que o botão de compra está visível (pode ter sido escondido numa visita anterior)
+        const buyBtnEl = isIG
+            ? document.querySelector('#mwIGNoCredits .mw-btn-next')
+            : document.querySelector('#mwCNPJNoCredits .mw-btn-next');
+        if (buyBtnEl) buyBtnEl.style.display = '';
     }
     mwUpdateFooter(mwState.currentStep);
 }
 
 function mwBuyCreditsIG() {
-    if (!canBuyPack('instagram')) {
-        const rem = getCreditsIG();
-        showToast('Use seus ' + rem + ' creditos IG antes de comprar mais.', 'warning');
-        return;
-    }
     selectPack('instagram');
     openBuyModal();
 }
 function mwBuyCreditsCNPJ() {
-    if (!canBuyPack('cnpj')) {
-        const rem = getCreditsCNPJ();
-        showToast('Use seus ' + rem + ' creditos CNPJ antes de comprar mais.', 'warning');
-        return;
-    }
     selectPack('cnpj');
     openBuyModal();
 }
@@ -2103,13 +2303,17 @@ function mwUpdateTopbar(step) {
 }
 
 function mwUpdateFooter(step) {
-    const btnBack = document.getElementById('mwBtnBack');
-    const btnNext = document.getElementById('mwBtnNext');
+    const btnBack  = document.getElementById('mwBtnBack');
+    const btnNext  = document.getElementById('mwBtnNext');
+    const footer   = document.querySelector('.mw-footer');
     if (!btnBack || !btnNext) return;
 
     const isSource = step === 'source';
     const flow     = mwState.source === 'cnpj' ? MW_FLOW_CNPJ : MW_FLOW_IG;
     const isLast   = flow.indexOf(step) === flow.length - 1;
+
+    // Na tela inicial não precisa de footer — esconde o container inteiro
+    if (footer) footer.style.display = isSource ? 'none' : 'flex';
 
     btnBack.style.visibility = isSource ? 'hidden' : 'visible';
 

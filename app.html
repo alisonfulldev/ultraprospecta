@@ -348,6 +348,13 @@
 
             </div><!-- /sidebarCNPJ -->
 
+            <!-- Info de histórico de leads -->
+            <div id="historyInfo" class="history-info" style="display:none">
+                <i class="fas fa-history"></i>
+                <span><span id="historyCount">0</span> leads no histórico — duplicatas são ignoradas</span>
+                <button onclick="clearLeadHistory()" title="Limpar histórico — a próxima captura poderá gerar leads já vistos">Limpar</button>
+            </div>
+
             <button class="btn btn-success btn-block" id="btnIniciarCaptura">
                 <i class="fas fa-play"></i> Iniciar Captura
             </button>
@@ -398,6 +405,7 @@
                 <div class="progress-bar">
                     <div class="progress-fill" id="progressFill"></div>
                 </div>
+                <div id="dupBadge" class="dup-badge" style="display:none"></div>
             </div>
 
             <!-- Filters -->
@@ -689,7 +697,7 @@
                     <div class="mw-buy-pack">
                         <i class="fab fa-instagram mw-buy-pack-icon"></i>
                         <div class="mw-buy-pack-info">
-                            <strong>100 leads Instagram</strong>
+                            <strong>50 leads Instagram</strong>
                             <small>WhatsApp · Email · Score · Qualificação</small>
                         </div>
                         <span class="mw-buy-pack-price">R$10</span>
@@ -1066,6 +1074,13 @@
          TELA DE CONCLUSÃO — pós captura (mobile)
          ══════════════════════════════════════════════════════ -->
     <div id="mwDoneScreen" class="mw-fullscreen mw-done-screen" style="display:none">
+        <div class="mwcs-topbar">
+            <div style="width:36px"></div>
+            <span class="mwcs-topbar-title">Captura concluída</span>
+            <button class="mw-hamburger-btn" onclick="mwOpenMenu()" aria-label="Menu" style="display:flex">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
         <div class="mwds-scroll">
             <div class="mwds-icon-wrap">
                 <i class="fas fa-check-circle"></i>
@@ -1284,6 +1299,26 @@
 </div>
 
 
+
+<!-- ── MODAL: Preview de Leads ── -->
+<div class="modal" id="previewModal">
+    <div class="modal-content" style="max-width:560px">
+        <div class="modal-header">
+            <h2><i class="fas fa-eye"></i> Revisar Leads Capturados</h2>
+            <button class="modal-close" onclick="rejectLeadPreview()">&times;</button>
+        </div>
+        <div class="modal-body" id="previewModalBody" style="padding:1.25rem 1.5rem;max-height:55vh;overflow-y:auto">
+        </div>
+        <div class="modal-footer" style="flex-direction:column;gap:.75rem;padding:1.25rem 1.5rem">
+            <button class="btn btn-success btn-block" onclick="approveLeadPreview()" style="justify-content:center;font-size:.95rem">
+                <i class="fas fa-check"></i> Aprovar e usar <span id="previewCreditCost">0</span> crédito(s)
+            </button>
+            <button class="btn btn-outline btn-block" onclick="rejectLeadPreview()" style="justify-content:center">
+                <i class="fas fa-times"></i> Rejeitar — não cobrar nada
+            </button>
+        </div>
+    </div>
+</div>
 
 <script src="app.js"></script>
 </body>

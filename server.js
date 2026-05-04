@@ -128,7 +128,12 @@ function extractUsername(t) {
 
 function extractShortcode(u) {
     const m = u.match(/\/(?:p|reel)\/([A-Za-z0-9_-]+)/);
-    if (!m) throw new Error('URL do post inválida.');
+    if (!m) {
+        const isProfile = /instagram\.com\/[^/?#]+\/?$/.test(u) && !/\/p\/|\/reel\//.test(u);
+        if (isProfile)
+            throw new Error('Você colou um link de perfil, mas este modo exige a URL de um post (ex: instagram.com/p/CODIGO). Use "Análise Completa" ou "Seguidores" para extrair de um perfil.');
+        throw new Error('URL do post inválida. Cole a URL completa de um post ou reel (ex: instagram.com/p/CODIGO).');
+    }
     return m[1];
 }
 

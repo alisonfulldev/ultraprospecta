@@ -1569,6 +1569,25 @@ body {
 
     /* Botão "Nova Captura" visível só em resultados */
     body.mw-results #mwResultsBack { display: block !important; }
+
+    /* Travar a altura da página no viewport quando o wizard está ativo
+       Isso garante que o footer Voltar/Continuar fique sempre visível
+       sem precisar rolar — o scroll acontece só dentro do .mw-body */
+    body:not(.mw-results) {
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+    }
+    body:not(.mw-results) .app-container {
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+        min-height: unset;
+    }
+    #mobileWizard {
+        height: 100%;
+        overflow: hidden;
+    }
 }
 
 /* Container do wizard */
@@ -2886,3 +2905,99 @@ input[type=checkbox] { accent-color: var(--primary); }
     white-space: nowrap;
 }
 .mw-menu-ig-btn:hover { background: rgba(59,130,246,.22); }
+
+/* ===================================================
+   Deduplicação & Preview Modal
+   =================================================== */
+
+/* Badge "X duplicados ignorados" dentro do progress */
+.dup-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    background: rgba(245,158,11,.15);
+    color: #f59e0b;
+    font-size: .74rem;
+    padding: .22rem .65rem;
+    border-radius: 20px;
+    margin-top: .45rem;
+    font-weight: 500;
+}
+
+/* Info de histórico acima do botão Iniciar */
+.history-info {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    font-size: .74rem;
+    color: rgba(255,255,255,.42);
+    padding: .25rem .1rem;
+    margin-bottom: .35rem;
+    flex-wrap: wrap;
+}
+.history-info i { opacity: .6; }
+.history-info button {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,.3);
+    font-size: .7rem;
+    cursor: pointer;
+    padding: 0;
+    font-family: inherit;
+    text-decoration: underline;
+    transition: color .2s;
+}
+.history-info button:hover { color: rgba(255,255,255,.65); }
+
+/* Preview table no modal */
+.preview-meta {
+    font-size: .84rem;
+    color: rgba(255,255,255,.8);
+    margin-bottom: .875rem;
+    line-height: 1.6;
+}
+.dup-info { color: #f59e0b; }
+
+.preview-table-wrap {
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .82rem;
+}
+.preview-table thead tr { background: rgba(255,255,255,.05); }
+.preview-table th {
+    text-align: left;
+    color: rgba(255,255,255,.4);
+    font-weight: 500;
+    font-size: .7rem;
+    padding: .5rem .7rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    white-space: nowrap;
+}
+.preview-table td {
+    padding: .45rem .7rem;
+    border-top: 1px solid rgba(255,255,255,.05);
+    vertical-align: middle;
+}
+.prev-user {
+    font-family: 'Courier New', monospace;
+    color: rgba(255,255,255,.72);
+    font-size: .81rem;
+    letter-spacing: .03em;
+}
+.prev-contacts {
+    display: flex;
+    gap: .4rem;
+    align-items: center;
+}
+.preview-note {
+    margin-top: .875rem;
+    font-size: .73rem;
+    color: rgba(255,255,255,.3);
+    text-align: center;
+}
