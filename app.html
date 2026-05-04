@@ -44,11 +44,11 @@
                 <span id="creditsCountIG">0</span>
                 <span class="credits-label">IG</span>
             </div>
-            <!-- Créditos CNPJ -->
-            <div class="credits-display" id="creditsDisplayCNPJ" style="display:none" title="Créditos CNPJ">
-                <span class="credits-icon"><i class="fas fa-building" style="font-size:.8rem"></i></span>
-                <span id="creditsCountCNPJ">0</span>
-                <span class="credits-label">CNPJ</span>
+            <!-- Créditos Google Maps -->
+            <div class="credits-display" id="creditsDisplayGoogle" style="display:none" title="Créditos Google Maps">
+                <span class="credits-icon"><i class="fab fa-google" style="font-size:.8rem"></i></span>
+                <span id="creditsCountGoogle">0</span>
+                <span class="credits-label">Maps</span>
             </div>
             <button class="btn btn-success btn-sm" id="btnBuyCredits" onclick="openBuyModal()" style="display:none">
                 + Comprar Leads
@@ -81,8 +81,8 @@
                 <button class="source-btn active" id="btnSourceIG" onclick="setSource('instagram')">
                     <i class="fab fa-instagram"></i> Instagram
                 </button>
-                <button class="source-btn" id="btnSourceCNPJ" onclick="setSource('cnpj')">
-                    <i class="fas fa-building"></i> CNPJ
+                <button class="source-btn" id="btnSourceGoogle" onclick="setSource('google')">
+                    <i class="fab fa-google"></i> Google Maps
                 </button>
             </div>
 
@@ -285,68 +285,56 @@
 
             </div><!-- /sidebarIG -->
 
-            <!-- ===== SIDEBAR CNPJ ===== -->
-            <div id="sidebarCNPJ" style="display:none">
+            <!-- ===== SIDEBAR GOOGLE MAPS ===== -->
+            <div id="sidebarGoogle" style="display:none">
 
                 <div class="sidebar-section">
-                    <h3><i class="fas fa-industry"></i> Busca por CNAE</h3>
+                    <h3><i class="fab fa-google"></i> Busca no Google Maps</h3>
 
                     <div class="form-group">
-                        <label>Setor / Atividade</label>
-                        <input type="text" id="cnaeSearch" placeholder="Ex: clínica, padaria, advocacia..." oninput="filterCnae(this.value)" autocomplete="off">
-                        <div id="cnaeDropdown" class="cnae-dropdown" style="display:none"></div>
-                        <input type="hidden" id="cnaeSelected">
-                        <small class="hint" id="cnaeSelectedLabel"></small>
+                        <label>Palavra-chave / Segmento</label>
+                        <input type="text" id="gmapsKeyword" placeholder="Ex: confeitaria, clínica dentária, academia...">
                     </div>
 
                     <div class="form-group">
-                        <label>Estado (UF)</label>
-                        <select id="cnpjUF" onchange="cnpjUFChanged()">
-                            <option value="">Todos os estados</option>
-                            <option>AC</option><option>AL</option><option>AM</option><option>AP</option>
-                            <option>BA</option><option>CE</option><option>DF</option><option>ES</option>
-                            <option>GO</option><option>MA</option><option>MG</option><option>MS</option>
-                            <option>MT</option><option>PA</option><option>PB</option><option>PE</option>
-                            <option>PI</option><option>PR</option><option>RJ</option><option>RN</option>
-                            <option>RO</option><option>RR</option><option>RS</option><option>SC</option>
-                            <option>SE</option><option>SP</option><option>TO</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Cidade</label>
-                        <input type="text" id="cnpjCity" placeholder="Ex: São Paulo">
+                        <label>Cidade (opcional)</label>
+                        <input type="text" id="gmapsCity" placeholder="Ex: Presidente Prudente, São Paulo">
+                        <small class="hint">Combinado: "confeitaria em Presidente Prudente"</small>
                     </div>
 
                     <div class="form-group">
                         <label>Quantidade (máx. 50 por crédito)</label>
-                        <input type="number" id="cnpjQuantity" min="1" max="50" value="50">
+                        <input type="number" id="gmapsQuantity" min="1" max="50" value="50">
                     </div>
                 </div>
 
                 <div class="sidebar-section">
-                    <h3><i class="fas fa-filter"></i> Filtrar Contatos</h3>
+                    <h3><i class="fas fa-filter"></i> Filtros de Qualidade</h3>
+
                     <div class="form-group checkbox-group">
-                        <label>
-                            <input type="checkbox" id="cnpjHasPhone">
-                            <span>Só com telefone</span>
-                        </label>
+                        <label><input type="checkbox" id="gmapsOnlyPhone">
+                            <span>Só com telefone</span></label>
                     </div>
                     <div class="form-group checkbox-group">
-                        <label>
-                            <input type="checkbox" id="cnpjHasMobile">
-                            <span>Só com celular</span>
-                        </label>
+                        <label><input type="checkbox" id="gmapsOnlyWhatsapp">
+                            <span>Só com WhatsApp</span></label>
                     </div>
                     <div class="form-group checkbox-group">
-                        <label>
-                            <input type="checkbox" id="cnpjHasEmail">
-                            <span>Só com email</span>
-                        </label>
+                        <label><input type="checkbox" id="gmapsOnlyNoWebsite">
+                            <span>Sem site <small style="color:rgba(255,255,255,.5)">(sem presença digital)</small></span></label>
+                    </div>
+                    <div class="form-group">
+                        <label>Nota mínima (Google)</label>
+                        <input type="number" id="gmapsMinRating" min="0" max="5" step="0.5" placeholder="Ex: 4.0">
+                    </div>
+                    <div class="form-group">
+                        <label>Nota máxima (Google)</label>
+                        <input type="number" id="gmapsMaxRating" min="0" max="5" step="0.5" placeholder="Ex: 3.5">
+                        <small class="hint">Negócios com nota baixa precisam de ajuda</small>
                     </div>
                 </div>
 
-            </div><!-- /sidebarCNPJ -->
+            </div><!-- /sidebarGoogle -->
 
             <!-- Info de histórico de leads -->
             <div id="historyInfo" class="history-info" style="display:none">
@@ -464,16 +452,14 @@
                                 <th class="col-bio">Bio</th>
                                 <th class="col-actions">Ações</th>
                             </tr>
-                            <!-- Colunas CNPJ -->
-                            <tr id="theadCNPJ" style="display:none">
-                                <th class="col-check"><input type="checkbox" id="checkAllCNPJ"></th>
+                            <!-- Colunas Google Maps -->
+                            <tr id="theadGoogle" style="display:none">
+                                <th class="col-check"><input type="checkbox" id="checkAllGoogle"></th>
                                 <th>Empresa</th>
-                                <th>CNPJ</th>
-                                <th>Atividade (CNAE)</th>
-                                <th>Telefone</th>
-                                <th>Celular</th>
-                                <th class="col-email">Email</th>
-                                <th>Cidade / UF</th>
+                                <th>WhatsApp / Tel</th>
+                                <th>Site</th>
+                                <th>Avaliação</th>
+                                <th>Endereço</th>
                                 <th class="col-actions">Ações</th>
                             </tr>
                         </thead>
@@ -528,10 +514,10 @@
                         <strong>Instagram</strong>
                         <small>Seguidores, curtidores e comentaristas de perfis</small>
                     </button>
-                    <button class="mw-source-card" id="mwCardCNPJ" onclick="mwChooseSource('cnpj')">
-                        <i class="fas fa-building"></i>
-                        <strong>CNPJ / Empresas</strong>
-                        <small>Busca por setor, estado e cidade</small>
+                    <button class="mw-source-card" id="mwCardGoogle" onclick="mwChooseSource('google')">
+                        <i class="fab fa-google"></i>
+                        <strong>Google Maps</strong>
+                        <small>Empresas por palavra-chave e cidade</small>
                     </button>
                 </div>
             </div>
@@ -798,102 +784,99 @@
                 </button>
             </div>
 
-            <!-- ── STEP CNPJ: Configurar ── -->
-            <div class="mw-step" id="mwStepCNPJConfig" style="display:none">
+            <!-- ── STEP Google: Configurar ── -->
+            <div class="mw-step" id="mwStepGoogleConfig" style="display:none">
                 <div class="mw-step-header">
-                    <h2>Buscar Empresas</h2>
-                    <p>Configure os filtros de busca por CNPJ</p>
+                    <h2>Buscar no Google Maps</h2>
+                    <p>Informe o segmento e a cidade</p>
                 </div>
                 <div class="mw-form">
-                    <div class="mw-form-group" style="position:relative">
-                        <label>Setor / Atividade (CNAE)</label>
-                        <input type="text" id="mwCnaeSearch" placeholder="Ex: clínica, padaria, advocacia..." oninput="mwFilterCnae(this.value)" autocomplete="off">
-                        <div id="mwCnaeDropdown" class="cnae-dropdown mw-cnae-drop" style="display:none"></div>
-                        <input type="hidden" id="mwCnaeSelected">
-                        <small class="mw-hint" id="mwCnaeLabel">Nenhum setor selecionado</small>
-                    </div>
                     <div class="mw-form-group">
-                        <label>Estado (UF)</label>
-                        <select id="mwCnpjUF">
-                            <option value="">Todos os estados</option>
-                            <option>AC</option><option>AL</option><option>AM</option><option>AP</option>
-                            <option>BA</option><option>CE</option><option>DF</option><option>ES</option>
-                            <option>GO</option><option>MA</option><option>MG</option><option>MS</option>
-                            <option>MT</option><option>PA</option><option>PB</option><option>PE</option>
-                            <option>PI</option><option>PR</option><option>RJ</option><option>RN</option>
-                            <option>RO</option><option>RR</option><option>RS</option><option>SC</option>
-                            <option>SE</option><option>SP</option><option>TO</option>
-                        </select>
+                        <label>Palavra-chave / Segmento</label>
+                        <input type="text" id="mwGmapsKeyword" placeholder="Ex: confeitaria, clínica dentária...">
+                        <small class="mw-hint">Nicho de mercado ou tipo de negócio</small>
                     </div>
                     <div class="mw-form-group">
                         <label>Cidade</label>
-                        <input type="text" id="mwCnpjCity" placeholder="Ex: São Paulo">
+                        <input type="text" id="mwGmapsCity" placeholder="Ex: Presidente Prudente, São Paulo">
+                        <small class="mw-hint">Será combinado: "confeitaria em Presidente Prudente"</small>
                     </div>
                     <div class="mw-form-group">
                         <label>Quantidade de leads</label>
-                        <input type="hidden" id="mwCnpjQty" value="50">
+                        <input type="hidden" id="mwGmapsQty" value="50">
                         <div class="mw-qty-fixed">
                             <i class="fas fa-lock" style="font-size:.75rem;opacity:.5"></i>
                             <span>50 leads</span>
                             <small>corresponde ao seu pacote</small>
                         </div>
                     </div>
-                    <div class="mw-form-group">
-                        <label style="color:rgba(255,255,255,.85);font-size:.8rem;margin-bottom:.625rem;display:block">Filtrar contatos</label>
-                        <div class="mw-checks-group" style="margin-bottom:0">
-                            <label class="mw-check-item">
-                                <input type="checkbox" id="mwCnpjPhone">
-                                <span>Só com telefone</span>
-                            </label>
-                            <label class="mw-check-item">
-                                <input type="checkbox" id="mwCnpjMobile">
-                                <span>Só com celular</span>
-                            </label>
-                            <label class="mw-check-item">
-                                <input type="checkbox" id="mwCnpjEmail">
-                                <span>Só com email</span>
-                            </label>
+                    <details class="mw-advanced">
+                        <summary>Filtros de qualidade <span style="color:rgba(255,255,255,.72);font-weight:400">(opcional)</span></summary>
+                        <div style="margin-top:.875rem">
+                            <div class="mw-checks-group">
+                                <label class="mw-check-item">
+                                    <input type="checkbox" id="mwGmapsOnlyPhone">
+                                    <span><i class="fas fa-phone" style="color:var(--primary);font-size:.8rem"></i> Só com telefone</span>
+                                </label>
+                                <label class="mw-check-item">
+                                    <input type="checkbox" id="mwGmapsOnlyWA">
+                                    <span><i class="fab fa-whatsapp" style="color:#25D366;font-size:.9rem"></i> Só com WhatsApp</span>
+                                </label>
+                                <label class="mw-check-item">
+                                    <input type="checkbox" id="mwGmapsOnlyNoSite">
+                                    <span><i class="fas fa-globe" style="color:rgba(255,255,255,.4);font-size:.8rem"></i> Sem site (sem presença digital)</span>
+                                </label>
+                            </div>
+                            <div class="mw-form-group" style="margin-top:.875rem">
+                                <label>Nota mínima ⭐</label>
+                                <input type="number" id="mwGmapsMinRating" min="0" max="5" step="0.5" placeholder="Ex: 4.0">
+                            </div>
+                            <div class="mw-form-group">
+                                <label>Nota máxima ⭐</label>
+                                <input type="number" id="mwGmapsMaxRating" min="0" max="5" step="0.5" placeholder="Ex: 3.5">
+                                <small class="mw-hint">Negócios com nota baixa precisam de ajuda — ótimos para prospectar serviços</small>
+                            </div>
                         </div>
-                    </div>
+                    </details>
                 </div>
             </div>
 
-            <!-- ── STEP CNPJ: Créditos ── -->
-            <div class="mw-step" id="mwStepCNPJCredits" style="display:none">
+            <!-- ── STEP Google: Créditos ── -->
+            <div class="mw-step" id="mwStepGoogleCredits" style="display:none">
                 <div class="mw-step-hero">
-                    <div class="mw-hero-icon" id="mwCNPJCredIcon">
+                    <div class="mw-hero-icon" id="mwGoogleCredIcon">
                         <i class="fas fa-coins"></i>
                     </div>
-                    <h2>Créditos CNPJ</h2>
+                    <h2>Créditos Google Maps</h2>
                     <p>Verifique seus créditos antes de continuar</p>
                 </div>
-                <div id="mwCNPJNoCredits">
+                <div id="mwGoogleNoCredits">
                     <div class="mw-buy-pack">
-                        <i class="fas fa-building mw-buy-pack-icon"></i>
+                        <i class="fab fa-google mw-buy-pack-icon"></i>
                         <div class="mw-buy-pack-info">
-                            <strong>50 leads CNPJ</strong>
-                            <small>Telefone · Celular · E-mail · CNAE</small>
+                            <strong>50 leads Google Maps</strong>
+                            <small>Nome · Telefone · Endereço · Site</small>
                         </div>
                         <span class="mw-buy-pack-price">R$10</span>
                     </div>
-                    <button class="mw-btn-next execute" style="width:100%;margin-top:1rem" onclick="mwBuyCreditsCNPJ()">
+                    <button class="mw-btn-next execute" style="width:100%;margin-top:1rem" onclick="mwBuyCreditsGoogle()">
                         <i class="fas fa-credit-card"></i> Comprar créditos — R$10,00
                     </button>
                     <p class="mw-hint" style="text-align:center;margin-top:.625rem">Pagamento seguro via Stripe</p>
                 </div>
-                <div id="mwCNPJHasCredits" style="display:none">
+                <div id="mwGoogleHasCredits" style="display:none">
                     <div class="mw-cred-ok">
                         <i class="fas fa-check-circle"></i>
                         <div>
-                            <strong id="mwCNPJCredCount">0</strong> créditos disponíveis
+                            <strong id="mwGoogleCredCount">0</strong> créditos disponíveis
                             <small>Cada lead consome 1 crédito</small>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- ── STEP CNPJ: Pronto ── -->
-            <div class="mw-step" id="mwStepCNPJReady" style="display:none">
+            <!-- ── STEP Google: Pronto ── -->
+            <div class="mw-step" id="mwStepGoogleReady" style="display:none">
                 <div class="mw-step-hero">
                     <div class="mw-hero-icon mw-icon-success">
                         <i class="fas fa-check"></i>
@@ -901,8 +884,8 @@
                     <h2>Tudo pronto!</h2>
                     <p>Confirme e inicie a busca</p>
                 </div>
-                <div class="mw-summary-card" id="mwCNPJSummary"></div>
-                <button class="mw-edit-config-btn" style="margin-top:.875rem" onclick="mwGoToStep('cnpj_config')">
+                <div class="mw-summary-card" id="mwGoogleSummary"></div>
+                <button class="mw-edit-config-btn" style="margin-top:.875rem" onclick="mwGoToStep('google_config')">
                     <i class="fas fa-edit"></i> Editar configuração
                 </button>
             </div>
@@ -950,12 +933,12 @@
                         </div>
                     </div>
                     <div class="mw-menu-credit-item">
-                        <div class="mw-menu-credit-icon cnpj">
-                            <i class="fas fa-building"></i>
+                        <div class="mw-menu-credit-icon google">
+                            <i class="fab fa-google"></i>
                         </div>
                         <div>
-                            <strong id="mwMenuCredCNPJ">0</strong>
-                            <small>créditos CNPJ</small>
+                            <strong id="mwMenuCredGoogle">0</strong>
+                            <small>créditos Google Maps</small>
                         </div>
                     </div>
                 </div>
@@ -1275,13 +1258,13 @@
                     <div style="font-size:1.1rem;font-weight:700;color:rgba(255,255,255,.8)">50 leads</div>
                     <div style="font-size:.75rem;color:rgba(255,255,255,.75);margin-top:.3rem">WhatsApp · Email · Score</div>
                 </div>
-                <!-- Pack CNPJ -->
-                <div class="buy-pack" id="packCNPJ" onclick="selectPack('cnpj')" style="border:2px solid transparent;border-radius:12px;padding:1.25rem;cursor:pointer;text-align:center;background:rgba(255,255,255,.04)">
-                    <div style="font-size:1.6rem;margin-bottom:.4rem"><i class="fas fa-building"></i></div>
-                    <div style="font-weight:700;font-size:.95rem;margin-bottom:.2rem">CNPJ Empresas</div>
+                <!-- Pack Google Maps -->
+                <div class="buy-pack" id="packGoogle" onclick="selectPack('google')" style="border:2px solid transparent;border-radius:12px;padding:1.25rem;cursor:pointer;text-align:center;background:rgba(255,255,255,.04)">
+                    <div style="font-size:1.6rem;margin-bottom:.4rem"><i class="fab fa-google"></i></div>
+                    <div style="font-weight:700;font-size:.95rem;margin-bottom:.2rem">Google Maps</div>
                     <div style="font-size:2rem;font-weight:900;color:var(--primary)">R$10</div>
                     <div style="font-size:1.1rem;font-weight:700;color:rgba(255,255,255,.8)">50 leads</div>
-                    <div style="font-size:.75rem;color:rgba(255,255,255,.75);margin-top:.3rem">Telefone · Email · CNAE</div>
+                    <div style="font-size:.75rem;color:rgba(255,255,255,.75);margin-top:.3rem">Nome · Telefone · Endereço · Site</div>
                 </div>
             </div>
             <p id="buyError" style="display:none;color:#ff6b6b;font-size:.83rem;margin-bottom:.75rem"></p>

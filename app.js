@@ -3,8 +3,8 @@
 // ============================================
 // Créditos — separados por fonte (localStorage)
 // ============================================
-const CREDITS_KEY_IG   = 'up_credits_ig';
-const CREDITS_KEY_CNPJ = 'up_credits_cnpj';
+const CREDITS_KEY_IG     = 'up_credits_ig';
+const CREDITS_KEY_GOOGLE = 'up_credits_google';
 
 // Migração do sistema antigo (chave única → por fonte)
 (function migrateLegacyCredits() {
@@ -17,20 +17,20 @@ const CREDITS_KEY_CNPJ = 'up_credits_cnpj';
     }
 })();
 
-function getCreditsIG()    { return parseInt(localStorage.getItem(CREDITS_KEY_IG)   || '0'); }
-function getCreditsCNPJ()  { return parseInt(localStorage.getItem(CREDITS_KEY_CNPJ) || '0'); }
-function getActiveCredits(){ return state.activeSource === 'cnpj' ? getCreditsCNPJ() : getCreditsIG(); }
+function getCreditsIG()     { return parseInt(localStorage.getItem(CREDITS_KEY_IG)     || '0'); }
+function getCreditsGoogle() { return parseInt(localStorage.getItem(CREDITS_KEY_GOOGLE) || '0'); }
+function getActiveCredits() { return state.activeSource === 'google' ? getCreditsGoogle() : getCreditsIG(); }
 
-function setCreditsIG(n)   { localStorage.setItem(CREDITS_KEY_IG,   String(Math.max(0, n))); updateCreditsUI(); }
-function setCreditsCNPJ(n) { localStorage.setItem(CREDITS_KEY_CNPJ, String(Math.max(0, n))); updateCreditsUI(); }
+function setCreditsIG(n)     { localStorage.setItem(CREDITS_KEY_IG,     String(Math.max(0, n))); updateCreditsUI(); }
+function setCreditsGoogle(n) { localStorage.setItem(CREDITS_KEY_GOOGLE, String(Math.max(0, n))); updateCreditsUI(); }
 function deductCredit()    {
-    if (state.activeSource === 'cnpj') setCreditsCNPJ(getCreditsCNPJ() - 1);
+    if (state.activeSource === 'google') setCreditsGoogle(getCreditsGoogle() - 1);
     else setCreditsIG(getCreditsIG() - 1);
 }
 function addCredits(n, type) {
     const t = type || state.activeSource || 'instagram';
-    if (t === 'cnpj') {
-        setCreditsCNPJ(getCreditsCNPJ() + n);
+    if (t === 'google') {
+        setCreditsGoogle(getCreditsGoogle() + n);
     } else {
         const wasZero = getCreditsIG() === 0;
         setCreditsIG(getCreditsIG() + n);
@@ -44,33 +44,32 @@ function addCredits(n, type) {
     }
     // Após compra: re-executa o step de créditos do wizard para auto-avançar
     setTimeout(() => {
-        if (mwState.currentStep === 'ig_credits'   && t !== 'cnpj') mwSetupCreditsStep('ig');
-        if (mwState.currentStep === 'cnpj_credits' && t === 'cnpj')  mwSetupCreditsStep('cnpj');
+        if (mwState.currentStep === 'ig_credits'     && t !== 'google') mwSetupCreditsStep('ig');
+        if (mwState.currentStep === 'google_credits' && t === 'google') mwSetupCreditsStep('google');
     }, 350);
 }
 
 function updateCreditsUI() {
-    const ig   = getCreditsIG();
-    const cnpj = getCreditsCNPJ();
-    const total = ig + cnpj;
+    const ig     = getCreditsIG();
+    const google = getCreditsGoogle();
 
-    const elIG   = document.getElementById('creditsCountIG');
-    const elCNPJ = document.getElementById('creditsCountCNPJ');
-    const dispIG   = document.getElementById('creditsDisplayIG');
-    const dispCNPJ = document.getElementById('creditsDisplayCNPJ');
-    const buyBtn   = document.getElementById('btnBuyCredits');
+    const elIG     = document.getElementById('creditsCountIG');
+    const elGoogle = document.getElementById('creditsCountGoogle');
+    const dispIG     = document.getElementById('creditsDisplayIG');
+    const dispGoogle = document.getElementById('creditsDisplayGoogle');
+    const buyBtn     = document.getElementById('btnBuyCredits');
 
-    if (elIG)   elIG.textContent   = ig;
-    if (elCNPJ) elCNPJ.textContent = cnpj;
+    if (elIG)     elIG.textContent     = ig;
+    if (elGoogle) elGoogle.textContent = google;
 
     if (dispIG) {
         dispIG.style.display = 'flex';
         dispIG.classList.toggle('credits-low',   ig > 0 && ig <= 10);
         dispIG.classList.toggle('credits-empty', ig <= 0);
     }
-    if (dispCNPJ) {
-        dispCNPJ.style.display = cnpj > 0 ? 'flex' : 'none';
-        dispCNPJ.classList.toggle('credits-low', cnpj > 0 && cnpj <= 10);
+    if (dispGoogle) {
+        dispGoogle.style.display = google > 0 ? 'flex' : 'none';
+        dispGoogle.classList.toggle('credits-low', google > 0 && google <= 10);
     }
     if (buyBtn) {
         buyBtn.style.display = 'inline-flex';
@@ -100,8 +99,7 @@ const state = {
     segmentCity: '',
     segmentActive: false,
     segmentReachable: false,
-    activeSource: 'instagram', // 'instagram' | 'cnpj'
-    cnaeList: [],
+    activeSource: 'instagram', // 'instagram' | 'google'
     selectedPackType: 'instagram',
     pendingLeads: [],
     duplicatesSkipped: 0
@@ -190,19 +188,19 @@ function updateDupBadge() {
 }
 
 // ============================================
-// Source Toggle (Instagram / CNPJ)
+// Source Toggle (Instagram / Google Maps)
 // ============================================
 function setSource(source) {
     state.activeSource = source;
 
-    document.getElementById('btnSourceIG').classList.toggle('active',   source === 'instagram');
-    document.getElementById('btnSourceCNPJ').classList.toggle('active', source === 'cnpj');
-    document.getElementById('sidebarIG').style.display   = source === 'instagram' ? '' : 'none';
-    document.getElementById('sidebarCNPJ').style.display = source === 'cnpj'      ? '' : 'none';
+    document.getElementById('btnSourceIG').classList.toggle('active',     source === 'instagram');
+    document.getElementById('btnSourceGoogle').classList.toggle('active', source === 'google');
+    document.getElementById('sidebarIG').style.display     = source === 'instagram' ? '' : 'none';
+    document.getElementById('sidebarGoogle').style.display = source === 'google'    ? '' : 'none';
 
     // Troca cabeçalho da tabela
-    document.getElementById('theadIG').style.display   = source === 'instagram' ? '' : 'none';
-    document.getElementById('theadCNPJ').style.display = source === 'cnpj'      ? '' : 'none';
+    document.getElementById('theadIG').style.display     = source === 'instagram' ? '' : 'none';
+    document.getElementById('theadGoogle').style.display = source === 'google'    ? '' : 'none';
 
     // Ajusta filtros visíveis
     const filterTemp = document.querySelector('.filter-group:first-child');
@@ -220,45 +218,8 @@ function setSource(source) {
     updateCounts();
 
     // Pré-seleciona pack no modal
-    state.selectedPackType = source;
+    state.selectedPackType = source === 'google' ? 'google' : 'instagram';
 }
-
-// ============================================
-// CNAE Autocomplete
-// ============================================
-async function loadCnaeList() {
-    if (state.cnaeList.length) return;
-    try {
-        const r = await fetch('/api/cnae/list');
-        state.cnaeList = await r.json();
-    } catch { state.cnaeList = []; }
-}
-
-function filterCnae(query) {
-    const dropdown = document.getElementById('cnaeDropdown');
-    if (!query || query.length < 2) { dropdown.style.display = 'none'; return; }
-    const q = query.toLowerCase();
-    const matches = state.cnaeList.filter(c =>
-        c.desc.toLowerCase().includes(q) || c.code.startsWith(q)
-    ).slice(0, 8);
-
-    if (!matches.length) { dropdown.style.display = 'none'; return; }
-    dropdown.innerHTML = matches.map(c =>
-        `<div class="cnae-item" onclick="selectCnae('${c.code}','${c.desc.replace(/'/g,"\\'")}')">
-            <strong>${c.code}</strong> — ${c.desc}
-        </div>`
-    ).join('');
-    dropdown.style.display = 'block';
-}
-
-function selectCnae(code, desc) {
-    document.getElementById('cnaeSelected').value = code;
-    document.getElementById('cnaeSearch').value   = desc;
-    document.getElementById('cnaeSelectedLabel').textContent = `Código: ${code}`;
-    document.getElementById('cnaeDropdown').style.display = 'none';
-}
-
-function cnpjUFChanged() { /* placeholder para futura busca de municípios */ }
 
 // ============================================
 // Buy Modal
@@ -266,10 +227,9 @@ function cnpjUFChanged() { /* placeholder para futura busca de municípios */ }
 
 
 function openBuyModal() {
-    const type    = state.activeSource === 'cnpj' ? 'cnpj' : 'instagram';
-    const credits = type === 'cnpj' ? getCreditsCNPJ() : getCreditsIG();
-    const errEl   = document.getElementById('buyError');
-    const btn     = document.getElementById('btnCheckout');
+    const type  = state.activeSource === 'google' ? 'google' : 'instagram';
+    const errEl = document.getElementById('buyError');
+    const btn   = document.getElementById('btnCheckout');
 
     errEl.style.display = 'none';
     selectPack(type);
@@ -284,13 +244,13 @@ function closeBuyModal() {
 
 function selectPack(type) {
     state.selectedPackType = type;
-    const packIG   = document.getElementById('packIG');
-    const packCNPJ = document.getElementById('packCNPJ');
-    if (packIG && packCNPJ) {
-        packIG.style.border   = type === 'instagram' ? '2px solid var(--primary)' : '2px solid transparent';
+    const packIG     = document.getElementById('packIG');
+    const packGoogle = document.getElementById('packGoogle');
+    if (packIG && packGoogle) {
+        packIG.style.border       = type === 'instagram' ? '2px solid var(--primary)' : '2px solid transparent';
         packIG.style.background   = type === 'instagram' ? 'rgba(0,200,83,.06)' : 'rgba(255,255,255,.04)';
-        packCNPJ.style.border = type === 'cnpj'      ? '2px solid var(--primary)' : '2px solid transparent';
-        packCNPJ.style.background = type === 'cnpj' ? 'rgba(0,200,83,.06)' : 'rgba(255,255,255,.04)';
+        packGoogle.style.border   = type === 'google'    ? '2px solid var(--primary)' : '2px solid transparent';
+        packGoogle.style.background = type === 'google'  ? 'rgba(0,200,83,.06)' : 'rgba(255,255,255,.04)';
     }
 }
 
@@ -299,7 +259,7 @@ function simulatePayment() {
     const n = 50;
     addCredits(n, type);
     closeBuyModal();
-    showToast(n + ' leads ' + (type === 'cnpj' ? 'CNPJ' : 'Instagram') + ' adicionados (modo teste)', 'success');
+    showToast(n + ' leads ' + (type === 'google' ? 'Google Maps' : 'Instagram') + ' adicionados (modo teste)', 'success');
 }
 
 async function goToCheckout() {
@@ -610,7 +570,7 @@ document.querySelectorAll('input[name="captureType"]').forEach(radio => {
 // Capture
 // ============================================
 async function startCapture() {
-    if (state.activeSource === 'cnpj') { startCaptureCNPJ(); return; }
+    if (state.activeSource === 'google') { startCaptureGoogle(); return; }
 
     // Créditos primeiro — sem créditos abre compra imediatamente
     if (getCreditsIG() <= 0) {
@@ -835,45 +795,53 @@ function rejectLeadPreview() {
 }
 
 // ============================================
-// Captura CNPJ
+// Captura Google Maps
 // ============================================
-function startCaptureCNPJ() {
-    if (getCreditsCNPJ() <= 0) { openBuyModal(); return; }
+function startCaptureGoogle() {
+    if (getCreditsGoogle() <= 0) { openBuyModal(); return; }
 
-    const cnae     = document.getElementById('cnaeSelected').value.trim();
-    const uf       = document.getElementById('cnpjUF').value.trim();
-    const city     = document.getElementById('cnpjCity').value.trim();
-    const quantity = 50;
-    const hasPhone  = document.getElementById('cnpjHasPhone').checked;
-    const hasMobile = document.getElementById('cnpjHasMobile').checked;
-    const hasEmail  = document.getElementById('cnpjHasEmail').checked;
+    const kw   = document.getElementById('gmapsKeyword')?.value?.trim() || '';
+    const city = document.getElementById('gmapsCity')?.value?.trim()    || '';
+    if (!kw) { showToast('Informe a palavra-chave de busca', 'error'); return; }
+
+    const keyword       = city ? `${kw} em ${city}` : kw;
+    const quantity      = 50;
+    const onlyPhone     = document.getElementById('gmapsOnlyPhone')?.checked     || false;
+    const onlyWhatsapp  = document.getElementById('gmapsOnlyWhatsapp')?.checked  || false;
+    const onlyNoWebsite = document.getElementById('gmapsOnlyNoWebsite')?.checked || false;
+    const minRating     = document.getElementById('gmapsMinRating')?.value        || '';
+    const maxRating     = document.getElementById('gmapsMaxRating')?.value        || '';
 
     state.isCapturing = true;
     state.startTime   = new Date();
     updateCaptureUI(true);
     document.getElementById('progressContainer').style.display = 'block';
-    setCaptureStatus('Buscando empresas...', true);
+    setCaptureStatus('Buscando no Google Maps...', true);
     startTimer();
 
-    const params = new URLSearchParams({ quantity, hasPhone, hasMobile, hasEmail });
-    if (cnae) params.set('cnae', cnae);
-    if (uf)   params.set('uf', uf);
-    if (city) params.set('municipio', city);
-
-    const es = new EventSource(`/api/cnpj/search?${params}`);
+    const params = new URLSearchParams({ keyword, quantity });
+    if (onlyPhone)     params.set('onlyPhone',     'true');
+    if (onlyWhatsapp)  params.set('onlyWhatsapp',  'true');
+    if (onlyNoWebsite) params.set('onlyNoWebsite', 'true');
+    if (minRating)     params.set('minRating', minRating);
+    if (maxRating)     params.set('maxRating', maxRating);
+    const es = new EventSource(`/api/gmaps/search?${params}`);
     state.eventSource = es;
 
     es.onmessage = e => {
         const data = JSON.parse(e.data);
         if (data.type === 'lead') {
-            if (state.leads.some(l => l.id === data.lead.id)) return;
+            const lead = data.lead;
+            if (state.leads.some(l => l.id === lead.id)) return;
+            if (isLeadInHistory(lead.id)) { state.duplicatesSkipped++; updateDupBadge(); return; }
 
-            const remaining = getCreditsCNPJ() - 1;
-            setCreditsCNPJ(remaining);
+            const remaining = getCreditsGoogle() - 1;
+            setCreditsGoogle(remaining);
+            addLeadToHistory(lead);
 
-            state.leads.push(data.lead);
+            state.leads.push(lead);
             updateProgress(state.leads.length, quantity);
-            try { renderRowCNPJ(data.lead); } catch(err) { console.error(err); }
+            try { renderRowGoogle(lead); } catch(err) { console.error(err); }
             updateCounts();
 
             if (remaining <= 0) {
@@ -886,7 +854,7 @@ function startCaptureCNPJ() {
         } else if (data.type === 'done') {
             es.close(); state.eventSource = null;
             setProgress(100, `${state.leads.length} empresas encontradas`);
-            finishCapture(`Concluído — ${state.leads.length} leads CNPJ encontrados`, 'success');
+            finishCapture(`Concluído — ${state.leads.length} leads Google Maps encontrados`, 'success');
             updateCreditsUI();
         } else if (data.type === 'error') {
             es.close(); state.eventSource = null;
@@ -902,32 +870,62 @@ function startCaptureCNPJ() {
     };
 }
 
-function renderRowCNPJ(lead) {
+function renderRowGoogle(lead) {
     const tbody = document.getElementById('resultsBody');
     document.getElementById('emptyRow')?.remove();
 
-    const nome = lead.nomeFantasia || lead.razaoSocial || '-';
-    const tel1 = lead.telefone  || '-';
-    const tel2 = lead.isMobile ? lead.telefone : (lead.telefone2 || '-');
-    const celular = lead.isMobile ? lead.telefone : (lead.telefone2 && lead.telefone2.replace(/\D/g,'').length === 11 ? lead.telefone2 : '-');
-    const fixo    = !lead.isMobile ? lead.telefone : (lead.telefone2 || '-');
-
     const row = document.createElement('tr');
-    row.dataset.id       = lead.id;
-    row.dataset.has_email = lead.email ? '1' : '0';
+    row.dataset.id          = lead.id;
+    row.dataset.has_email   = '0';
+    row.dataset.has_whatsapp = lead.whatsapp ? '1' : '0';
+
+    // WhatsApp / Telefone combinados
+    let contactHtml = '-';
+    if (lead.whatsapp) {
+        const waNum = lead.whatsapp.replace(/\D/g, '');
+        contactHtml = `<a href="https://wa.me/${waNum}" target="_blank" rel="noopener" class="contact-link wa-link"><i class="fab fa-whatsapp"></i> ${formatPhone(lead.whatsapp)}</a>`;
+        if (lead.phone && lead.phone !== lead.whatsapp) {
+            contactHtml += `<br><small style="color:var(--gray);font-size:.72rem"><i class="fas fa-phone"></i> ${lead.phone}</small>`;
+        }
+    } else if (lead.phone) {
+        contactHtml = `<a href="tel:${lead.phone.replace(/\D/g,'')}" class="contact-link"><i class="fas fa-phone"></i> ${lead.phone}</a>`;
+    }
+
+    let websiteHtml = '-';
+    if (lead.website) {
+        try {
+            const host = new URL(lead.website).hostname.replace(/^www\./, '');
+            websiteHtml = `<a href="${lead.website}" target="_blank" rel="noopener" class="contact-link" title="${lead.website}"><i class="fas fa-globe"></i> ${host}</a>`;
+        } catch { websiteHtml = `<a href="${lead.website}" target="_blank" rel="noopener" class="contact-link"><i class="fas fa-globe"></i> site</a>`; }
+    }
+
+    const ratingHtml = lead.rating != null
+        ? `⭐ ${lead.rating.toFixed(1)}${lead.reviewCount ? ` <small style="color:var(--gray)">(${lead.reviewCount.toLocaleString('pt-BR')})</small>` : ''}`
+        : '-';
 
     row.innerHTML = `
         <td><input type="checkbox" class="row-checkbox" data-id="${lead.id}"></td>
-        <td style="max-width:160px"><strong style="font-size:.85rem">${nome}</strong><br><small style="color:var(--gray);font-size:.75rem">${lead.razaoSocial !== nome ? lead.razaoSocial : ''}</small></td>
-        <td style="font-size:.8rem;font-family:monospace">${lead.cnpj || '-'}</td>
-        <td style="font-size:.78rem;max-width:140px" title="${lead.cnaeDesc}">${lead.cnaeDesc ? lead.cnaeDesc.slice(0,40)+(lead.cnaeDesc.length>40?'…':'') : lead.cnae || '-'}</td>
-        <td style="font-size:.82rem">${fixo !== '-' ? `<i class="fas fa-phone" style="color:var(--gray);font-size:.7rem"></i> ${fixo}` : '-'}</td>
-        <td style="font-size:.82rem">${celular !== '-' ? `<a href="https://wa.me/55${celular.replace(/\D/g,'')}" target="_blank" class="contact-link wa-link"><i class="fab fa-whatsapp"></i> ${celular}</a>` : '-'}</td>
-        <td class="email-value">${lead.email ? `<a href="mailto:${lead.email}" class="contact-link mail-link"><i class="fas fa-envelope"></i> ${lead.email}</a>` : '-'}</td>
-        <td style="font-size:.82rem">${lead.municipio || ''}${lead.municipio && lead.uf ? ' / ' : ''}${lead.uf || ''}</td>
+        <td style="max-width:160px">
+            <strong style="font-size:.85rem">${lead.name}</strong>
+            ${lead.category ? `<br><small style="color:var(--gray);font-size:.72rem">${lead.category}</small>` : ''}
+        </td>
+        <td style="font-size:.82rem">${contactHtml}</td>
+        <td style="font-size:.78rem">${websiteHtml}</td>
+        <td style="font-size:.82rem;white-space:nowrap">${ratingHtml}</td>
+        <td style="font-size:.78rem;max-width:150px;color:rgba(255,255,255,.75)">${lead.address || '-'}</td>
         <td><button class="action-btn delete" onclick="deleteLead('${lead.id}')" title="Excluir"><i class="fas fa-trash"></i></button></td>
     `;
     tbody.appendChild(row);
+}
+
+function formatPhone(raw) {
+    if (!raw) return '';
+    const d = raw.replace(/\D/g, '');
+    // 55 + DDD(2) + número(8-9) = 12-13 dígitos
+    const num = d.startsWith('55') ? d.slice(2) : d;
+    if (num.length === 11) return `(${num.slice(0,2)}) ${num.slice(2,7)}-${num.slice(7)}`;
+    if (num.length === 10) return `(${num.slice(0,2)}) ${num.slice(2,6)}-${num.slice(6)}`;
+    return raw;
 }
 
 function finishCapture(msg, type) {
@@ -1029,15 +1027,19 @@ function renderAllLeads() {
     if (state.filteredLeads.length === 0) {
         tbody.innerHTML = `<tr class="empty-row" id="emptyRow"><td colspan="10"><div class="empty-state">
             <i class="fas fa-filter"></i><p>Nenhum lead com esses filtros</p></div></td></tr>`;
+    } else if (state.activeSource === 'google') {
+        // Google Maps — usar renderRowGoogle (sem score, sem fotos)
+        state.filteredLeads.forEach(lead => renderRowGoogle(lead));
     } else {
-        // Inserir direto sem re-verificar passesFilter dentro de renderRow
+        // Instagram — renderização com score/fotos inline
         state.filteredLeads.forEach(lead => {
             const score = lead.score ?? 0;
             const { label: slabel, cls } = scoreLabel(score);
+            const initial = ((lead.fullName || lead.username || '?').charAt(0)).toUpperCase();
             const photoHtml = lead.photoUrl
                 ? `<img src="${lead.photoUrl}" class="user-photo" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                   <div class="user-photo-placeholder" style="display:none">${(lead.fullName||lead.username).charAt(0).toUpperCase()}</div>`
-                : `<div class="user-photo-placeholder">${(lead.fullName||lead.username).charAt(0).toUpperCase()}</div>`;
+                   <div class="user-photo-placeholder" style="display:none">${initial}</div>`
+                : `<div class="user-photo-placeholder">${initial}</div>`;
 
             const row = document.createElement('tr');
             row.dataset.id       = lead.id;
@@ -1068,11 +1070,13 @@ function passesFilter(lead) {
     if (state.filterEmail    && !lead.email)      return false;
     if (state.filterPublic   && lead.isPrivate)   return false;
 
-    // Busca
+    // Busca (Instagram: username/fullName | Google: name/address)
     if (state.filterSearch) {
         const q = state.filterSearch.toLowerCase();
         if (!(lead.username || '').toLowerCase().includes(q) &&
-            !(lead.fullName  || '').toLowerCase().includes(q)) return false;
+            !(lead.fullName  || '').toLowerCase().includes(q) &&
+            !(lead.name      || '').toLowerCase().includes(q) &&
+            !(lead.address   || '').toLowerCase().includes(q)) return false;
     }
 
     // Temperatura
@@ -1162,6 +1166,54 @@ function deleteSelected() {
 function exportToPDF() {
     if (typeof html2pdf === 'undefined') { showToast('Biblioteca PDF ainda carregando. Aguarde e tente novamente.', 'error'); return; }
     if (!state.leads.length) { showToast('Nenhum lead para exportar', 'warning'); return; }
+
+    // Google Maps PDF export
+    if (state.activeSource === 'google') {
+        const date  = new Date().toLocaleDateString('pt-BR', { day:'2-digit', month:'long', year:'numeric' });
+        const total = state.leads.length;
+        const withPhone = state.leads.filter(l => l.phone).length;
+        const withSite  = state.leads.filter(l => l.website).length;
+        const keyword   = state.leads[0]?.keyword || '';
+        const cards = state.leads.map((l, i) => `
+            <div style="page-break-inside:avoid;border:1px solid #e8e8e8;border-radius:10px;padding:14px 16px;margin-bottom:10px;background:#fff">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                    <div style="flex:1">
+                        <div style="font-size:14px;font-weight:700;color:#1A1A2E">${i+1}. ${l.name}</div>
+                        ${l.category ? `<div style="font-size:11px;color:#888;margin-top:2px">${l.category}</div>` : ''}
+                    </div>
+                    ${l.rating ? `<div style="font-size:12px;color:#F39C12;font-weight:700">⭐ ${l.rating.toFixed(1)}${l.reviewCount ? ` (${l.reviewCount.toLocaleString('pt-BR')})` : ''}</div>` : ''}
+                </div>
+                <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;font-size:12px">
+                    ${l.phone   ? `<div>📞 <a href="tel:${l.phone.replace(/\D/g,'')}" style="color:#00C853">${l.phone}</a></div>` : ''}
+                    ${l.address ? `<div style="color:#555">📍 ${l.address}</div>` : ''}
+                    ${l.website ? `<div>🌐 <a href="${l.website}" target="_blank" style="color:#0088cc">${l.website}</a></div>` : ''}
+                </div>
+            </div>`).join('');
+        const html = `<div style="font-family:Inter,Arial,sans-serif;background:#f8fafc;padding:0">
+            <div style="background:linear-gradient(135deg,#1a73e8,#0d47a1);color:#fff;padding:28px 36px">
+                <div style="font-size:22px;font-weight:900">UltraProspec — Google Maps</div>
+                <div style="font-size:13px;opacity:.85;margin-top:6px">Busca: "${keyword}" · ${date}</div>
+                <div style="display:flex;gap:20px;margin-top:14px;font-size:13px">
+                    <span>📍 ${total} empresas</span><span>📞 ${withPhone} com telefone</span><span>🌐 ${withSite} com site</span>
+                </div>
+            </div>
+            <div style="padding:20px 36px 36px">${cards}</div>
+        </div>`;
+        const container = document.createElement('div');
+        container.innerHTML = html;
+        document.body.appendChild(container);
+        html2pdf().set({
+            margin: 0, filename: `ultraprospec_gmaps_${getTs()}.pdf`,
+            image: { type: 'jpeg', quality: 0.95 },
+            html2canvas: { scale: 1.5, useCORS: true, logging: false },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+            enableLinks: true, pagebreak: { mode: ['avoid-all','css'] }
+        }).from(container).save().then(() => {
+            document.body.removeChild(container);
+            showToast(`PDF gerado com ${total} leads Google Maps!`, 'success');
+        }).catch(() => { document.body.removeChild(container); showToast('Erro ao gerar PDF', 'error'); });
+        return;
+    }
 
     // Sempre inclui todos os leads: quentes no topo, frios no final
 
@@ -1419,17 +1471,30 @@ function exportToPDF() {
 // ============================================
 function exportToCSV() {
     if (!state.leads.length) { showToast('Nenhum lead para exportar', 'warning'); return; }
-    const headers = ['Usuário','Nome','Score','Temperatura','WhatsApp','Email','Bio','Fonte','Privado','Capturado em'];
-    const rows = state.leads.map(l => {
-        const s = l.score ?? calculateScore(l);
-        const { label } = scoreLabel(s);
-        return [
-            `@${l.username}`, l.fullName || '', s, label,
-            l.whatsapp || '', l.email || '', l.bio || '',
-            l.source || '', l.isPrivate ? 'Sim' : 'Não',
+    const isGoogle = state.activeSource === 'google';
+    let headers, rows;
+    if (isGoogle) {
+        headers = ['Nome','Telefone','Categoria','Site','Avaliação','Nº Avaliações','Endereço','Busca','Capturado em'];
+        rows = state.leads.map(l => [
+            l.name || '', l.phone || '', l.category || '', l.website || '',
+            l.rating != null ? l.rating.toFixed(1) : '',
+            l.reviewCount != null ? l.reviewCount : '',
+            l.address || '', l.keyword || '',
             new Date(l.capturedAt).toLocaleString('pt-BR')
-        ];
-    });
+        ]);
+    } else {
+        headers = ['Usuário','Nome','Score','Temperatura','WhatsApp','Email','Bio','Fonte','Privado','Capturado em'];
+        rows = state.leads.map(l => {
+            const s = l.score ?? calculateScore(l);
+            const { label } = scoreLabel(s);
+            return [
+                `@${l.username}`, l.fullName || '', s, label,
+                l.whatsapp || '', l.email || '', l.bio || '',
+                l.source || '', l.isPrivate ? 'Sim' : 'Não',
+                new Date(l.capturedAt).toLocaleString('pt-BR')
+            ];
+        });
+    }
     const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `ultraprospec_${getTs()}.csv`, style: 'display:none' });
@@ -1534,18 +1599,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. Inicializa créditos do localStorage
     updateCreditsUI();
 
-    // 2. Carrega lista de CNAEs em background
-    loadCnaeList();
-
-    // 3. Fecha dropdown CNAE ao clicar fora
-    document.addEventListener('click', e => {
-        if (!e.target.closest('#cnaeSearch') && !e.target.closest('#cnaeDropdown')) {
-            const dd = document.getElementById('cnaeDropdown');
-            if (dd) dd.style.display = 'none';
-        }
-    });
-
-    // 4. Verifica status do Instagram
+    // 2. Verifica status do Instagram
     checkLoginStatus();
 
     // 3. Fechar modal ao clicar fora
@@ -1619,17 +1673,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Aviso de créditos pendentes — exibe uma vez por dia
     setTimeout(() => {
-        const ig   = getCreditsIG();
-        const cnpj = getCreditsCNPJ();
-        const today = new Date().toISOString().slice(0, 10);
+        const ig     = getCreditsIG();
+        const google = getCreditsGoogle();
+        const total  = ig + google;
+        const today    = new Date().toISOString().slice(0, 10);
         const lastWarn = localStorage.getItem('up_credit_warn_date');
-        if ((ig > 0 || cnpj > 0) && lastWarn !== today) {
+        if (total > 0 && lastWarn !== today) {
             localStorage.setItem('up_credit_warn_date', today);
             const partes = [];
-            if (ig   > 0) partes.push(`${ig} Instagram`);
-            if (cnpj > 0) partes.push(`${cnpj} CNPJ`);
+            if (ig     > 0) partes.push(`${ig} Instagram`);
+            if (google > 0) partes.push(`${google} Google Maps`);
             showToast(
-                `Você ainda tem ${partes.join(' e ')} crédito${(ig + cnpj) > 1 ? 's' : ''} disponível${(ig + cnpj) > 1 ? 'is' : ''}. Use-os em breve — créditos ficam salvos no navegador e podem ser perdidos se você limpar os dados do site.`,
+                `Você ainda tem ${partes.join(' e ')} crédito${total > 1 ? 's' : ''} disponível${total > 1 ? 'is' : ''}. Use-os em breve — créditos ficam salvos no navegador e podem ser perdidos se você limpar os dados do site.`,
                 'warning', 10000
             );
         }
@@ -1641,8 +1696,8 @@ window.deleteLead = deleteLead;
 
 // ═══════════════════════════════════════════════════════════════
 // MOBILE WIZARD — fluxo step-by-step (≤768px)
-// Fluxo IG:   source→ig_type→ig_config→ig_credits→ig_login→ig_ready→captura
-// Fluxo CNPJ: source→cnpj_config→cnpj_credits→cnpj_ready→captura
+// Fluxo IG:     source→ig_type→ig_config→ig_credits→ig_login→ig_ready→captura
+// Fluxo Google: source→google_config→google_credits→google_ready→captura
 // ═══════════════════════════════════════════════════════════════
 
 const mwState = {
@@ -1655,19 +1710,19 @@ let mwPendingLogin   = false;
 let mwCaptureTimer   = null;   // interval para monitor da captura
 let mwLastPdfExport  = null;   // referência ao PDF gerado
 
-const MW_FLOW_IG   = ['source','ig_type','ig_config','ig_credits','ig_login','ig_ready'];
-const MW_FLOW_CNPJ = ['source','cnpj_config','cnpj_credits','cnpj_ready'];
+const MW_FLOW_IG     = ['source','ig_type','ig_config','ig_credits','ig_login','ig_ready'];
+const MW_FLOW_GOOGLE = ['source','google_config','google_credits','google_ready'];
 
 const MW_STEP_EL = {
-    source:         'mwStepSource',
-    ig_type:        'mwStepIGType',
-    ig_config:      'mwStepIGConfig',
-    ig_credits:     'mwStepIGCredits',
-    ig_login:       'mwStepIGLogin',
-    ig_ready:       'mwStepIGReady',
-    cnpj_config:    'mwStepCNPJConfig',
-    cnpj_credits:   'mwStepCNPJCredits',
-    cnpj_ready:     'mwStepCNPJReady',
+    source:          'mwStepSource',
+    ig_type:         'mwStepIGType',
+    ig_config:       'mwStepIGConfig',
+    ig_credits:      'mwStepIGCredits',
+    ig_login:        'mwStepIGLogin',
+    ig_ready:        'mwStepIGReady',
+    google_config:   'mwStepGoogleConfig',
+    google_credits:  'mwStepGoogleCredits',
+    google_ready:    'mwStepGoogleReady',
 };
 
 function mwIsMobile() {
@@ -1701,8 +1756,8 @@ function mwInit() {
     ['closeLoginModal','btnCancelLogin'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('click', () => {
-            if (mwState.currentStep === 'ig_credits')    mwSetupCreditsStep('ig');
-            if (mwState.currentStep === 'cnpj_credits')  mwSetupCreditsStep('cnpj');
+            if (mwState.currentStep === 'ig_credits')     mwSetupCreditsStep('ig');
+            if (mwState.currentStep === 'google_credits') mwSetupCreditsStep('google');
         });
     });
 }
@@ -1712,8 +1767,8 @@ function mwChooseSource(source) {
     mwState.source = source;
     setSource(source);
     document.querySelectorAll('.mw-source-card').forEach(c => c.classList.remove('selected'));
-    document.getElementById(source === 'instagram' ? 'mwCardIG' : 'mwCardCNPJ')?.classList.add('selected');
-    setTimeout(() => mwGoToStep(source === 'instagram' ? 'ig_type' : 'cnpj_config'), 220);
+    document.getElementById(source === 'instagram' ? 'mwCardIG' : 'mwCardGoogle')?.classList.add('selected');
+    setTimeout(() => mwGoToStep(source === 'instagram' ? 'ig_type' : 'google_config'), 220);
 }
 
 // ─── Navegação ────────────────────────────────────────────────
@@ -1732,23 +1787,23 @@ function mwGoToStep(step) {
     mwUpdateTopbar(step);
     mwUpdateFooter(step);
 
-    if (step === 'ig_config')    mwSetupIGConfig();
-    if (step === 'ig_credits')   mwSetupCreditsStep('ig');
-    if (step === 'ig_login')     mwRefreshLoginStep();
-    if (step === 'ig_ready')     mwSetupReadyStep('ig');
-    if (step === 'cnpj_credits') mwSetupCreditsStep('cnpj');
-    if (step === 'cnpj_ready')   mwSetupReadyStep('cnpj');
+    if (step === 'ig_config')      mwSetupIGConfig();
+    if (step === 'ig_credits')     mwSetupCreditsStep('ig');
+    if (step === 'ig_login')       mwRefreshLoginStep();
+    if (step === 'ig_ready')       mwSetupReadyStep('ig');
+    if (step === 'google_credits') mwSetupCreditsStep('google');
+    if (step === 'google_ready')   mwSetupReadyStep('google');
 }
 
 function mwBack() {
-    const flow = mwState.source === 'cnpj' ? MW_FLOW_CNPJ : MW_FLOW_IG;
+    const flow = mwState.source === 'google' ? MW_FLOW_GOOGLE : MW_FLOW_IG;
     const idx  = flow.indexOf(mwState.currentStep);
     if (idx <= 0) return;
     mwGoToStep(flow[idx - 1]);
 }
 
 function mwNext() {
-    const flow   = mwState.source === 'cnpj' ? MW_FLOW_CNPJ : MW_FLOW_IG;
+    const flow   = mwState.source === 'google' ? MW_FLOW_GOOGLE : MW_FLOW_IG;
     const idx    = flow.indexOf(mwState.currentStep);
     const isLast = idx === flow.length - 1;
 
@@ -1776,9 +1831,9 @@ function mwValidate(step) {
             }
         }
     }
-    if (step === 'cnpj_config') {
-        const qty = parseInt(document.getElementById('mwCnpjQty')?.value) || 0;
-        if (qty < 1) { showToast('Informe a quantidade de leads', 'error'); return false; }
+    if (step === 'google_config') {
+        const kw = (document.getElementById('mwGmapsKeyword')?.value || '').trim();
+        if (!kw) { showToast('Informe a palavra-chave de busca', 'error'); return false; }
     }
     if (step === 'ig_credits') {
         if (getCreditsIG() <= 0) { showToast('Adquira créditos para continuar', 'warning'); return false; }
@@ -1786,8 +1841,8 @@ function mwValidate(step) {
     if (step === 'ig_login') {
         if (!loadIgSession()?.loggedIn) { showToast('Conecte sua conta do Instagram para continuar', 'warning'); return false; }
     }
-    if (step === 'cnpj_credits') {
-        if (getCreditsCNPJ() <= 0) { showToast('Adquira créditos para continuar', 'warning'); return false; }
+    if (step === 'google_credits') {
+        if (getCreditsGoogle() <= 0) { showToast('Adquira créditos para continuar', 'warning'); return false; }
     }
     return true;
 }
@@ -1795,12 +1850,12 @@ function mwValidate(step) {
 // ─── Step: Créditos ──────────────────────────────────────────
 function mwSetupCreditsStep(source) {
     const isIG = source === 'ig';
-    const credits = isIG ? getCreditsIG() : getCreditsCNPJ();
-    const hasEl   = document.getElementById(isIG ? 'mwIGHasCredits'  : 'mwCNPJHasCredits');
-    const noEl    = document.getElementById(isIG ? 'mwIGNoCredits'   : 'mwCNPJNoCredits');
-    const countEl = document.getElementById(isIG ? 'mwIGCredCount'   : 'mwCNPJCredCount');
-    const iconEl  = document.getElementById(isIG ? 'mwIGCredIcon'    : 'mwCNPJCredIcon');
-    const titleEl = document.getElementById(isIG ? 'mwIGCredTitle'   : null);
+    const credits = isIG ? getCreditsIG() : getCreditsGoogle();
+    const hasEl   = document.getElementById(isIG ? 'mwIGHasCredits'     : 'mwGoogleHasCredits');
+    const noEl    = document.getElementById(isIG ? 'mwIGNoCredits'      : 'mwGoogleNoCredits');
+    const countEl = document.getElementById(isIG ? 'mwIGCredCount'      : 'mwGoogleCredCount');
+    const iconEl  = document.getElementById(isIG ? 'mwIGCredIcon'       : 'mwGoogleCredIcon');
+    const titleEl = document.getElementById(isIG ? 'mwIGCredTitle'      : null);
 
     if (credits > 0) {
         if (hasEl)  hasEl.style.display  = 'block';
@@ -1812,13 +1867,13 @@ function mwSetupCreditsStep(source) {
         // Esconder botão de compra quando tem créditos (regra de sessão)
         const buyBtnEl = isIG
             ? document.querySelector('#mwIGNoCredits .mw-btn-next')
-            : document.querySelector('#mwCNPJNoCredits .mw-btn-next');
+            : document.querySelector('#mwGoogleNoCredits .mw-btn-next');
         if (buyBtnEl) buyBtnEl.style.display = 'none';
 
         // Auto-avança após breve exibição
         setTimeout(() => {
-            if (mwState.currentStep === (isIG ? 'ig_credits' : 'cnpj_credits')) {
-                mwGoToStep(isIG ? 'ig_login' : 'cnpj_ready');
+            if (mwState.currentStep === (isIG ? 'ig_credits' : 'google_credits')) {
+                mwGoToStep(isIG ? 'ig_login' : 'google_ready');
             }
         }, 900);
     } else {
@@ -1832,7 +1887,7 @@ function mwSetupCreditsStep(source) {
         // Garante que o botão de compra está visível (pode ter sido escondido numa visita anterior)
         const buyBtnEl = isIG
             ? document.querySelector('#mwIGNoCredits .mw-btn-next')
-            : document.querySelector('#mwCNPJNoCredits .mw-btn-next');
+            : document.querySelector('#mwGoogleNoCredits .mw-btn-next');
         if (buyBtnEl) buyBtnEl.style.display = '';
     }
     mwUpdateFooter(mwState.currentStep);
@@ -1842,8 +1897,8 @@ function mwBuyCreditsIG() {
     selectPack('instagram');
     openBuyModal();
 }
-function mwBuyCreditsCNPJ() {
-    selectPack('cnpj');
+function mwBuyCreditsGoogle() {
+    selectPack('google');
     openBuyModal();
 }
 
@@ -1944,7 +1999,7 @@ async function mwCancelBrowserLogin() {
 // ─── Step: Pronto (summary) ───────────────────────────────────
 function mwSetupReadyStep(source) {
     const isIG   = source === 'ig';
-    const summEl = document.getElementById(isIG ? 'mwIGSummary' : 'mwCNPJSummary');
+    const summEl = document.getElementById(isIG ? 'mwIGSummary' : 'mwGoogleSummary');
     if (!summEl) return;
 
     if (isIG) {
@@ -1979,18 +2034,23 @@ function mwSetupReadyStep(source) {
             <div class="mw-summary-row"><span>Créditos IG</span><strong>${cred} disponíveis</strong></div>
         `;
     } else {
-        const cnaeLabel = document.getElementById('mwCnaeLabel')?.textContent?.replace('Código: ','') || 'Todos';
-        const uf   = document.getElementById('mwCnpjUF')?.value  || 'Todos';
-        const city = document.getElementById('mwCnpjCity')?.value || 'Todas';
-        const qty  = document.getElementById('mwCnpjQty')?.value  || '50';
-        const cred = getCreditsCNPJ();
+        const kw        = document.getElementById('mwGmapsKeyword')?.value?.trim() || '—';
+        const city      = document.getElementById('mwGmapsCity')?.value?.trim()    || '';
+        const qty       = document.getElementById('mwGmapsQty')?.value             || '50';
+        const cred      = getCreditsGoogle();
+        const query     = city ? `${kw} em ${city}` : kw;
+        const onlyPhone = document.getElementById('mwGmapsOnlyPhone')?.checked  ? '✅ Só com telefone' : '';
+        const onlyWA    = document.getElementById('mwGmapsOnlyWA')?.checked     ? '✅ Só com WhatsApp' : '';
+        const onlyNoSite= document.getElementById('mwGmapsOnlyNoSite')?.checked ? '✅ Sem site' : '';
+        const minRat    = document.getElementById('mwGmapsMinRating')?.value;
+        const maxRat    = document.getElementById('mwGmapsMaxRating')?.value;
+        const filtros   = [onlyPhone, onlyWA, onlyNoSite, minRat ? `Nota ≥ ${minRat}` : '', maxRat ? `Nota ≤ ${maxRat}` : ''].filter(Boolean).join(' · ');
 
         summEl.innerHTML = `
-            <div class="mw-summary-row"><span>Setor</span><strong>${cnaeLabel}</strong></div>
-            <div class="mw-summary-row"><span>Estado</span><strong>${uf}</strong></div>
-            <div class="mw-summary-row"><span>Cidade</span><strong>${city}</strong></div>
+            <div class="mw-summary-row"><span>Busca</span><strong>${query}</strong></div>
             <div class="mw-summary-row"><span>Quantidade</span><strong>${qty} leads</strong></div>
-            <div class="mw-summary-row"><span>Créditos CNPJ</span><strong>${cred} disponíveis</strong></div>
+            ${filtros ? `<div class="mw-summary-row"><span>Filtros</span><strong style="font-size:.78rem">${filtros}</strong></div>` : ''}
+            <div class="mw-summary-row"><span>Créditos Google</span><strong>${cred} disponíveis</strong></div>
         `;
     }
     mwUpdateFooter(mwState.currentStep);
@@ -2069,11 +2129,11 @@ async function mwExecute() {
     if (progFill) progFill.style.width = '0%';
     if (progPct)  progPct.textContent  = '0%';
     const topTitle = document.getElementById('mwcsTopTitle');
-    if (topTitle) topTitle.textContent = mwState.source === 'cnpj' ? 'Buscando empresas...' : 'Capturando leads...';
+    if (topTitle) topTitle.textContent = mwState.source === 'google' ? 'Buscando no Google Maps...' : 'Capturando leads...';
 
     // Iniciar captura
     if (mwState.source === 'instagram') startCapture();
-    else startCaptureCNPJ();
+    else startCaptureGoogle();
 
     // Iniciar monitor
     mwStartCaptureMonitor();
@@ -2129,16 +2189,18 @@ function mwSyncToSidebar() {
         state.segmentActive    = segAct;
         state.segmentReachable = segReach;
     } else {
+        // Sync Google Maps wizard → sidebar
         const pairs = [
-            ['cnaeSelected','mwCnaeSelected','value'],
-            ['cnpjUF','mwCnpjUF','value'],
-            ['cnpjCity','mwCnpjCity','value'],
-            ['cnpjQuantity','mwCnpjQty','value'],
-            ['cnpjHasPhone','mwCnpjPhone','checked'],
-            ['cnpjHasMobile','mwCnpjMobile','checked'],
-            ['cnpjHasEmail','mwCnpjEmail','checked'],
+            ['gmapsKeyword',      'mwGmapsKeyword',   'value'],
+            ['gmapsCity',         'mwGmapsCity',       'value'],
+            ['gmapsQuantity',     'mwGmapsQty',        'value'],
+            ['gmapsOnlyPhone',    'mwGmapsOnlyPhone',  'checked'],
+            ['gmapsOnlyWhatsapp', 'mwGmapsOnlyWA',     'checked'],
+            ['gmapsOnlyNoWebsite','mwGmapsOnlyNoSite', 'checked'],
+            ['gmapsMinRating',    'mwGmapsMinRating',  'value'],
+            ['gmapsMaxRating',    'mwGmapsMaxRating',  'value'],
         ];
-        pairs.forEach(([sid,wid,prop]) => {
+        pairs.forEach(([sid, wid, prop]) => {
             const sEl = document.getElementById(sid);
             const wEl = document.getElementById(wid);
             if (sEl && wEl) sEl[prop] = wEl[prop];
@@ -2219,8 +2281,8 @@ function mwRenderLatestLead(lead) {
     const cls   = score >= 65 ? 'score-hot' : score >= 35 ? 'score-warm' : 'score-cold';
     const emoji = score >= 65 ? '🔥' : score >= 35 ? '🌡️' : '❄️';
 
-    const name  = lead.fullname || lead.username || lead.razaoSocial || lead.company || '—';
-    const sub   = lead.username ? `@${lead.username}` : (lead.cnpj || '');
+    const name  = lead.fullname || lead.username || lead.name || '—';
+    const sub   = lead.username ? `@${lead.username}` : (lead.address || '');
     const photo = lead.profilePicUrl || lead.profile_pic_url || '';
 
     const avatarHtml = photo
@@ -2291,7 +2353,7 @@ function mwUpdateTopbar(step) {
     const backIcon = document.getElementById('mwBackIcon');
     if (backIcon) backIcon.style.visibility = step === 'source' ? 'hidden' : 'visible';
 
-    const flow = mwState.source === 'cnpj' ? MW_FLOW_CNPJ
+    const flow = mwState.source === 'google' ? MW_FLOW_GOOGLE
         : (mwState.source ? MW_FLOW_IG : ['source']);
     const dotsEl = document.getElementById('mwDots');
     if (!dotsEl) return;
@@ -2309,7 +2371,7 @@ function mwUpdateFooter(step) {
     if (!btnBack || !btnNext) return;
 
     const isSource = step === 'source';
-    const flow     = mwState.source === 'cnpj' ? MW_FLOW_CNPJ : MW_FLOW_IG;
+    const flow     = mwState.source === 'google' ? MW_FLOW_GOOGLE : MW_FLOW_IG;
     const isLast   = flow.indexOf(step) === flow.length - 1;
 
     // Na tela inicial não precisa de footer — esconde o container inteiro
@@ -2319,8 +2381,8 @@ function mwUpdateFooter(step) {
 
     // Ocultar botão "Continuar" nos steps de crédito com compra pendente
     const isCreditsWithoutFunds =
-        (step === 'ig_credits' && getCreditsIG() <= 0) ||
-        (step === 'cnpj_credits' && getCreditsCNPJ() <= 0);
+        (step === 'ig_credits'     && getCreditsIG()     <= 0) ||
+        (step === 'google_credits' && getCreditsGoogle() <= 0);
 
     // Ocultar no step de login quando não conectado
     const isLoginNotConn = step === 'ig_login' && !loadIgSession()?.loggedIn;
@@ -2391,35 +2453,6 @@ function mwSetupIGConfig() {
     }
 }
 
-// ─── Autocomplete CNAE do wizard ──────────────────────────────
-function mwFilterCnae(query) {
-    const drop = document.getElementById('mwCnaeDropdown');
-    if (!drop) return;
-    if (!query || query.length < 2) { drop.style.display = 'none'; return; }
-    const q = query.toLowerCase();
-    const matches = state.cnaeList.filter(c =>
-        c.desc.toLowerCase().includes(q) || c.code.startsWith(q)
-    ).slice(0, 8);
-    if (!matches.length) { drop.style.display = 'none'; return; }
-    drop.innerHTML = matches.map(c =>
-        `<div class="cnae-item" onclick="mwSelectCnae('${c.code}','${c.desc.replace(/'/g,"\\'")}')">
-            <strong>${c.code}</strong> — ${c.desc}
-         </div>`
-    ).join('');
-    drop.style.display = 'block';
-}
-
-function mwSelectCnae(code, desc) {
-    const sel  = document.getElementById('mwCnaeSelected');
-    const srch = document.getElementById('mwCnaeSearch');
-    const lbl  = document.getElementById('mwCnaeLabel');
-    const drop = document.getElementById('mwCnaeDropdown');
-    if (sel)  sel.value          = code;
-    if (srch) srch.value         = desc;
-    if (lbl)  lbl.textContent    = `Código: ${code}`;
-    if (drop) drop.style.display = 'none';
-}
-
 // ─── Menu Hambúrguer ──────────────────────────────────────────
 function mwOpenMenu() {
     const panel   = document.getElementById('mwMenuPanel');
@@ -2427,16 +2460,16 @@ function mwOpenMenu() {
     if (!panel || !overlay) return;
 
     // Atualiza créditos
-    const ig   = getCreditsIG();
-    const cnpj = getCreditsCNPJ();
-    const credIG   = document.getElementById('mwMenuCredIG');
-    const credCNPJ = document.getElementById('mwMenuCredCNPJ');
-    if (credIG)   credIG.textContent   = ig;
-    if (credCNPJ) credCNPJ.textContent = cnpj;
+    const ig     = getCreditsIG();
+    const google = getCreditsGoogle();
+    const credIG     = document.getElementById('mwMenuCredIG');
+    const credGoogle = document.getElementById('mwMenuCredGoogle');
+    if (credIG)     credIG.textContent     = ig;
+    if (credGoogle) credGoogle.textContent = google;
 
     // Seção de compra: só mostra se todos zerados
     const buySection = document.getElementById('mwMenuBuySection');
-    if (buySection) buySection.style.display = (ig === 0 && cnpj === 0) ? 'block' : 'none';
+    if (buySection) buySection.style.display = (ig === 0 && google === 0) ? 'block' : 'none';
 
     // Status do Instagram
     const session = loadIgSession();

@@ -5,7 +5,6 @@ const axios    = require('axios');
 const crypto   = require('crypto');
 const Stripe   = require('stripe');
 const { IgApiClient, IgCheckpointError } = require('instagram-private-api');
-const { getDb } = require('./db');
 let puppeteer; try { puppeteer = require('puppeteer'); } catch { puppeteer = null; }
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY || '');
@@ -307,19 +306,19 @@ app.post('/api/challenge', async (req, res) => {
 
 // ============================================
 // PAYMENT ROUTES — Stripe
-// Instagram: 100 leads = R$10,00
-// CNPJ:      50 leads  = R$10,00
+// Instagram: 50 leads = R$10,00
+// Google:    50 leads = R$10,00
 // ============================================
 const PACKS = {
-    instagram: { credits: 100, price: 1000, name: 'UltraProspec — 100 Leads Instagram', desc: 'R$0,10 por lead qualificado do Instagram' },
-    cnpj:      { credits: 50,  price: 1000, name: 'UltraProspec — 50 Leads CNPJ',      desc: 'R$0,20 por lead empresarial da Receita Federal' }
+    instagram: { credits: 50, price: 1000, name: 'UltraProspec — 50 Leads Instagram',    desc: 'R$0,20 por lead qualificado do Instagram' },
+    google:    { credits: 50, price: 1000, name: 'UltraProspec — 50 Leads Google Maps',  desc: 'R$0,20 por lead empresarial do Google Maps' }
 };
 
 app.post('/api/payment/create', async (req, res) => {
     if (!process.env.STRIPE_SECRET_KEY)
         return res.status(500).json({ error: 'STRIPE_SECRET_KEY não configurada no .env' });
 
-    const type = (req.body.type === 'cnpj') ? 'cnpj' : 'instagram';
+    const type = (req.body.type === 'google') ? 'google' : 'instagram';
     const pack = PACKS[type];
     const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
     try {
@@ -361,7 +360,7 @@ app.get('/api/payment/verify', async (req, res) => {
 
         req.session.verifiedSessions.push(session_id);
         const type    = session.metadata?.type || 'instagram';
-        const credits = parseInt(session.metadata?.credits) || PACKS[type]?.credits || 100;
+        const credits = parseInt(session.metadata?.credits) || PACKS[type]?.credits || 50;
         res.json({ approved: true, credits, type, amount: session.amount_total / 100 });
     } catch (err) {
         console.error('Stripe verify error:', err.message);
@@ -716,91 +715,289 @@ app.get('/api/capture', async (req, res) => {
 });
 
 // ============================================
-// CNAE LIST — proxy IBGE (com cache em memória)
+// GOOGLE MAPS SEARCH — SSE, scraping via Puppeteer
 // ============================================
-let cnaeCache = null;
-app.get('/api/cnae/list', async (req, res) => {
-    if (cnaeCache) return res.json(cnaeCache);
-    try {
-        const r = await axios.get('https://servicodados.ibge.gov.br/api/v2/cnae/classes', { timeout: 10000 });
-        cnaeCache = r.data.map(c => ({ code: String(c.id), desc: c.descricao }));
-        res.json(cnaeCache);
-    } catch {
-        res.json([]);
-    }
-});
+const gmapsState = { isRunning: false };
 
-// ============================================
-// CNPJ SEARCH — SSE, busca no SQLite local
-// ============================================
-app.get('/api/cnpj/search', (req, res) => {
-    const db = getDb();
-    if (!db) {
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.flushHeaders();
-        res.write(`data: ${JSON.stringify({ type: 'error', message: 'Base CNPJ não carregada. Execute "node import-receita.js" primeiro.' })}\n\n`);
-        return res.end();
-    }
+// Extrai detalhes da página de um estabelecimento já carregada
+async function extractPlaceDetails(page) {
+    return page.evaluate(() => {
+        const name = document.querySelector('h1')?.innerText?.trim() || '';
+        if (!name) return null;
 
-    const { cnae, uf, municipio, quantity = '50', hasPhone = 'false', hasMobile = 'false', hasEmail = 'false' } = req.query;
-    const maxLeads = Math.min(parseInt(quantity) || 50, 50);
+        let phone = '', address = '', website = '', whatsapp = '';
 
+        // data-item-id (mais estável entre versões do Maps)
+        document.querySelectorAll('[data-item-id]').forEach(el => {
+            const id  = (el.getAttribute('data-item-id') || '').toLowerCase();
+            const txt = (el.innerText || '').split('\n')[0].trim();
+            if (!phone   && id.includes('phone'))                          phone   = txt;
+            if (!address && (id === 'address' || id.includes(':address'))) address = txt;
+        });
+
+        // Fallback: botões com aria-label
+        if (!phone || !address) {
+            document.querySelectorAll('button[aria-label], [role="button"][aria-label]').forEach(el => {
+                const lb  = (el.getAttribute('aria-label') || '').trim();
+                const txt = (el.innerText || '').split('\n')[0].trim();
+                if (!phone   && /^\+?[\d][\d\s\(\)\-\.]{6,18}[\d]$/.test(lb))       phone   = lb;
+                if (!address && lb.length > 12 && /\d/.test(lb) && lb.includes(',')) address = lb;
+                if (!phone   && /^\+?[\d][\d\s\(\)\-\.]{6,18}[\d]$/.test(txt))      phone   = txt;
+            });
+        }
+
+        // WhatsApp — links wa.me ou botão próprio do Google Maps
+        const allLinks = [...document.querySelectorAll('a[href]')];
+        for (const a of allLinks) {
+            const href = a.href || '';
+            if (href.includes('wa.me/') || href.includes('api.whatsapp.com/send')) {
+                const m = href.match(/(?:wa\.me\/|phone=)(\+?[\d]+)/);
+                if (m) { whatsapp = m[1]; break; }
+            }
+        }
+
+        // Website (não-Google)
+        if (!website) {
+            const candidates = [
+                'a[data-item-id*="authority"]',
+                'a[aria-label*="site do"]',
+                'a[aria-label*="website"]',
+                'a[data-tooltip*="site"]',
+            ];
+            for (const sel of candidates) {
+                const el = document.querySelector(sel);
+                if (el?.href && !el.href.includes('google.com')) { website = el.href; break; }
+            }
+        }
+
+        // Se o "site" é um link de WhatsApp, extrair de lá também
+        if (!whatsapp && website && (website.includes('wa.me/') || website.includes('api.whatsapp.com'))) {
+            const m = website.match(/(?:wa\.me\/|phone=)(\+?[\d]+)/);
+            if (m) { whatsapp = m[1]; website = ''; }
+        }
+
+        // Inferir WhatsApp de celular brasileiro (11 dígitos: DDD + 9 + 8)
+        if (!whatsapp && phone) {
+            const digits = phone.replace(/\D/g, '');
+            if (digits.length === 11 && digits[2] === '9') whatsapp = `55${digits}`;
+            else if (digits.length === 13 && digits.startsWith('55') && digits[4] === '9') whatsapp = digits;
+        }
+
+        // Rating
+        let rating = null, reviewCount = null;
+        const ratingEl = document.querySelector('[aria-label*="estrelas"], [aria-label*="stars"]');
+        if (ratingEl) {
+            const m = (ratingEl.getAttribute('aria-label') || '').match(/[\d,\.]+/);
+            if (m) rating = parseFloat(m[0].replace(',', '.')) || null;
+        }
+        if (!rating) {
+            const rtxt = document.querySelector('.F7nice [aria-hidden="true"]')?.textContent?.replace(',', '.') || '';
+            if (rtxt) rating = parseFloat(rtxt) || null;
+        }
+        const rvEl = document.querySelector('[aria-label*="avaliações"], [aria-label*="reviews"]');
+        if (rvEl) {
+            const m2 = (rvEl.getAttribute('aria-label') || '').match(/[\d.]+/);
+            if (m2) reviewCount = parseInt(m2[0].replace('.', '')) || null;
+        }
+
+        // Categoria
+        let category = '';
+        for (const sel of ['button.DkEaL', '[jsaction*="category"] span', '.fontBodyMedium button']) {
+            const el = document.querySelector(sel);
+            if (el?.innerText?.trim()) { category = el.innerText.trim(); break; }
+        }
+
+        return { name, phone, address, website, whatsapp, rating, reviewCount, category };
+    });
+}
+
+app.get('/api/gmaps/search', async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
     const send = d => { if (!res.writableEnded) res.write(`data: ${JSON.stringify(d)}\n\n`); };
+    const end  = () => { if (!res.writableEnded) res.end(); };
+
+    if (!puppeteer) {
+        send({ type: 'error', message: 'Puppeteer não instalado. Execute: npm install puppeteer' });
+        return end();
+    }
+
+    if (gmapsState.isRunning) {
+        send({ type: 'error', message: 'Busca já em andamento. Aguarde finalizar.' });
+        return end();
+    }
+
+    const {
+        keyword = '', quantity = '50',
+        onlyPhone = 'false', onlyWhatsapp = 'false', onlyNoWebsite = 'false',
+        minRating = '', maxRating = ''
+    } = req.query;
+    const maxLeads    = Math.min(parseInt(quantity) || 50, 50);
+    const query       = keyword.trim();
+    const fPhone      = onlyPhone     === 'true';
+    const fWhatsapp   = onlyWhatsapp  === 'true';
+    const fNoWebsite  = onlyNoWebsite === 'true';
+    const fMinRating  = minRating ? parseFloat(minRating) : null;
+    const fMaxRating  = maxRating ? parseFloat(maxRating) : null;
+
+    if (!query) {
+        send({ type: 'error', message: 'Informe a palavra-chave de busca' });
+        return end();
+    }
+
+    let stopped = false;
+    req.on('close', () => { stopped = true; });
+
+    gmapsState.isRunning = true;
+    let browser = null;
 
     try {
-        const where  = ["situacao = '02'"]; // só ativas
-        const params = [];
+        send({ type: 'log', message: `Buscando "${query}" no Google Maps...` });
 
-        if (cnae)     { where.push('cnae_principal = ?');              params.push(cnae); }
-        if (uf)       { where.push('uf = ?');                          params.push(uf.toUpperCase()); }
-        if (municipio){ where.push('municipio LIKE ?');                params.push(`%${municipio.toUpperCase()}%`); }
-        if (hasPhone  === 'true') { where.push('telefone1 IS NOT NULL AND telefone1 != ""'); }
-        if (hasMobile === 'true') { where.push('(length(telefone1) = 9 AND telefone1 LIKE "9%")'); }
-        if (hasEmail  === 'true') { where.push('email IS NOT NULL AND email != ""'); }
-
-        send({ type: 'log', message: 'Buscando na base da Receita Federal...' });
-
-        const rows = db.prepare(`
-            SELECT * FROM estabelecimentos
-            WHERE ${where.join(' AND ')}
-            ORDER BY RANDOM()
-            LIMIT ?
-        `).all(...params, maxLeads);
-
-        rows.forEach(row => {
-            const isMobile = row.telefone1 && row.telefone1.length === 9 && row.telefone1.startsWith('9');
-            const lead = {
-                id:           row.cnpj,
-                cnpj:         row.cnpj,
-                razaoSocial:  row.razao_social  || '',
-                nomeFantasia: row.nome_fantasia  || '',
-                cnae:         row.cnae_principal || '',
-                cnaeDesc:     row.cnae_desc      || '',
-                uf:           row.uf             || '',
-                municipio:    row.municipio      || '',
-                telefone:     row.ddd1 && row.telefone1 ? `(${row.ddd1}) ${row.telefone1}` : '',
-                telefone2:    row.ddd2 && row.telefone2 ? `(${row.ddd2}) ${row.telefone2}` : '',
-                email:        row.email          || '',
-                endereco:     [row.logradouro, row.numero, row.bairro].filter(Boolean).join(', '),
-                cep:          row.cep            || '',
-                porte:        row.porte          || '',
-                isMobile,
-                source: 'cnpj'
-            };
-            send({ type: 'lead', lead });
+        browser = await puppeteer.launch({
+            headless: true,
+            args: [
+                '--no-sandbox', '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage', '--lang=pt-BR,pt',
+                '--disable-blink-features=AutomationControlled',
+            ],
         });
 
-        send({ type: 'done', total: rows.length });
+        const page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        await page.setExtraHTTPHeaders({ 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8' });
+
+        // ── Fase 1: carregar página de busca e coletar todas as URLs ──────
+        const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}`;
+        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+        // Fechar banner de cookies se aparecer
+        try {
+            const consentBtn = await page.$('form[action*="consent"] button:last-of-type');
+            if (consentBtn) { await consentBtn.click(); await sleep(1000); }
+        } catch {}
+
+        // Aguardar feed de resultados
+        try {
+            await page.waitForSelector('[role="feed"]', { timeout: 15000 });
+        } catch {
+            throw new Error('Google Maps não carregou os resultados. Verifique a conexão e tente novamente.');
+        }
+
+        send({ type: 'log', message: 'Resultados encontrados. Carregando lista completa...' });
+
+        // Scrollar para carregar mais resultados (Google Maps carrega ~20 por vez)
+        let prevUrlCount = 0;
+        for (let scroll = 0; scroll < 12 && !stopped; scroll++) {
+            await page.evaluate(() => {
+                const feed = document.querySelector('[role="feed"]');
+                if (feed) feed.scrollBy(0, 5000);
+            });
+            await sleep(1800);
+
+            const urlCount = await page.$$eval(
+                '[role="feed"] a[href*="/maps/place/"]',
+                els => new Set(els.map(e => e.href.split('@')[0])).size
+            ).catch(() => 0);
+
+            if (urlCount >= maxLeads) break;
+            if (urlCount === prevUrlCount && scroll > 2) break; // sem mais itens
+            prevUrlCount = urlCount;
+
+            send({ type: 'log', message: `${urlCount} estabelecimentos carregados...` });
+        }
+
+        // Coletar URLs únicas dos resultados — ANTES de clicar em qualquer um
+        const placeUrls = await page.$$eval(
+            '[role="feed"] a[href*="/maps/place/"]',
+            (links, max) => {
+                const seen = new Set();
+                const result = [];
+                for (const a of links) {
+                    // Chave = URL até o "@" (coordenadas) para deduplicar variantes
+                    const key = a.href.split('@')[0];
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    result.push(a.href);
+                    if (result.length >= max) break;
+                }
+                return result;
+            },
+            maxLeads
+        ).catch(() => []);
+
+        if (!placeUrls.length) {
+            throw new Error(`Nenhum resultado encontrado para "${query}". Tente uma busca diferente.`);
+        }
+
+        send({ type: 'log', message: `${placeUrls.length} estabelecimentos encontrados. Extraindo detalhes...` });
+
+        // ── Fase 2: visitar cada URL e extrair dados ───────────────────────
+        const seen = new Set();
+        let count  = 0;
+
+        for (let i = 0; i < placeUrls.length && count < maxLeads && !stopped; i++) {
+            try {
+                await page.goto(placeUrls[i], { waitUntil: 'domcontentloaded', timeout: 20000 });
+                await page.waitForSelector('h1', { timeout: 8000 }).catch(() => {});
+                await sleep(800); // deixar JS da página terminar de renderizar
+
+                const details = await extractPlaceDetails(page);
+                if (!details || !details.name) continue;
+
+                // Aplicar filtros antes de contar como lead
+                if (fPhone    && !details.phone)    continue;
+                if (fWhatsapp && !details.whatsapp) continue;
+                if (fNoWebsite && details.website)  continue;
+                if (fMinRating !== null && details.rating !== null && details.rating < fMinRating) continue;
+                if (fMaxRating !== null && details.rating !== null && details.rating > fMaxRating) continue;
+
+                const key = `${details.name.toLowerCase()}|${(details.address || '').toLowerCase()}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+
+                const id = crypto.createHash('sha1').update(key).digest('hex').slice(0, 20);
+
+                send({ type: 'lead', lead: {
+                    id,
+                    name:        details.name,
+                    phone:       details.phone       || null,
+                    whatsapp:    details.whatsapp    || null,
+                    address:     details.address     || null,
+                    website:     details.website     || null,
+                    rating:      details.rating      || null,
+                    reviewCount: details.reviewCount || null,
+                    category:    details.category    || null,
+                    keyword:     query,
+                    source:      'google_maps',
+                    capturedAt:  new Date().toISOString()
+                }});
+                count++;
+
+                if (count % 5 === 0 || count === 1) {
+                    send({ type: 'log', message: `${count}/${placeUrls.length} extraídos...` });
+                }
+
+                // Delay aleatório para não parecer bot
+                await sleep(600 + Math.floor(Math.random() * 600));
+
+            } catch (err) {
+                console.warn(`[gmaps] ${i + 1}/${placeUrls.length}: ${err.message.slice(0, 80)}`);
+            }
+        }
+
+        send({ type: 'done', total: count });
     } catch (err) {
+        console.error('[gmaps]', err.message);
         send({ type: 'error', message: err.message });
+    } finally {
+        gmapsState.isRunning = false;
+        try { if (browser) await browser.close(); } catch {}
+        end();
     }
-    res.end();
 });
 
 // ============================================

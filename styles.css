@@ -2829,7 +2829,7 @@ input[type=checkbox] { accent-color: var(--primary); }
     flex-shrink: 0;
 }
 .mw-menu-credit-icon.ig   { background: rgba(225,48,108,.15); color: #E1306C; }
-.mw-menu-credit-icon.cnpj { background: rgba(59,130,246,.15); color: var(--primary); }
+.mw-menu-credit-icon.google { background: rgba(66,133,244,.15); color: #4285F4; }
 .mw-menu-credit-item strong { display: block; font-size: 1.5rem; font-weight: 800; color: white; line-height: 1; }
 .mw-menu-credit-item small  { color: rgba(255,255,255,.5); font-size: .75rem; }
 
