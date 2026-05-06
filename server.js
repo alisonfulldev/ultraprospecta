@@ -4,8 +4,230 @@ const session  = require('express-session');
 const axios    = require('axios');
 const crypto   = require('crypto');
 const Stripe   = require('stripe');
+const fs       = require('fs');
+const path     = require('path');
+const Database = require('better-sqlite3');
 const { IgApiClient, IgCheckpointError } = require('instagram-private-api');
 let puppeteer; try { puppeteer = require('puppeteer'); } catch { puppeteer = null; }
+
+// ============================================
+// Monitor DB (SQLite local)
+// ============================================
+const db = new Database(path.join(__dirname, 'monitor.db'));
+db.exec(`
+  CREATE TABLE IF NOT EXISTS monitor_profiles (
+    username     TEXT PRIMARY KEY,
+    ig_user_id   TEXT,
+    added_at     TEXT NOT NULL,
+    last_checked TEXT,
+    follower_count INTEGER DEFAULT 0,
+    status       TEXT DEFAULT 'pending'
+  );
+  CREATE TABLE IF NOT EXISTS profile_followers (
+    profile_username TEXT NOT NULL,
+    follower_id      TEXT NOT NULL,
+    PRIMARY KEY (profile_username, follower_id)
+  );
+  CREATE TABLE IF NOT EXISTS monitor_events (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_username TEXT NOT NULL,
+    follower_id      TEXT NOT NULL,
+    follower_username TEXT,
+    follower_fullname TEXT,
+    follower_photo    TEXT,
+    detected_at      TEXT NOT NULL,
+    seen             INTEGER DEFAULT 0
+  );
+`);
+
+// ============================================
+// Monitor State
+// ============================================
+const monitor = {
+  credentials: null,   // IG creds salvas quando usuário conecta
+  clients:     new Set(), // SSE clients ativos
+  timer:       null,
+  polling:     false,
+  INTERVAL:    10 * 60 * 1000, // 10 minutos
+  POLL_PAGES:  10,             // 500 seguidores por poll
+  MAX_PAGES:   400,            // 20k seguidores no sync inicial
+};
+
+function monitorSend(data) {
+  const msg = `data: ${JSON.stringify(data)}\n\n`;
+  for (const res of monitor.clients) {
+    try { if (!res.writableEnded) res.write(msg); }
+    catch { monitor.clients.delete(res); }
+  }
+}
+
+function monitorAxiosWeb() {
+  const c = monitor.credentials;
+  if (!c) return null;
+  const ua     = c.userAgent     || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+  const cookie = c.cookieString  || [`sessionid=${c.sessionid}`, c.csrftoken ? `csrftoken=${c.csrftoken}` : '', c.dsUserId ? `ds_user_id=${c.dsUserId}` : ''].filter(Boolean).join('; ');
+  return axios.create({
+    baseURL: 'https://www.instagram.com', timeout: 25000,
+    maxRedirects: 0, validateStatus: s => s < 500,
+    headers: {
+      'User-Agent': ua, 'Accept': '*/*',
+      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'X-IG-App-ID': '936619743392459', 'X-ASBD-ID': '129477',
+      'X-CSRFToken': c.csrftoken || '', 'X-Requested-With': 'XMLHttpRequest',
+      'X-IG-WWW-Claim': '0',
+      'Referer': 'https://www.instagram.com/', 'Origin': 'https://www.instagram.com',
+      'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+      'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'empty', 'sec-fetch-mode': 'cors', 'sec-fetch-site': 'same-origin',
+      'Cookie': cookie,
+    }
+  });
+}
+
+function monitorAxiosMobile() {
+  const c = monitor.credentials;
+  if (!c) return null;
+  const cookie = c.cookieString || [`sessionid=${c.sessionid}`, c.csrftoken ? `csrftoken=${c.csrftoken}` : ''].filter(Boolean).join('; ');
+  return axios.create({
+    baseURL: 'https://i.instagram.com', timeout: 20000,
+    maxRedirects: 3, validateStatus: s => s < 500,
+    headers: {
+      'User-Agent':    'Instagram 289.0.0.77.109 Android (29/10; 440dpi; 1080x2220; OnePlus; ONEPLUS A6003; OnePlus6; qcom; pt_BR; 482616210)',
+      'X-IG-App-ID':  '567067343352427', 'Accept': '*/*',
+      'Accept-Language': 'pt-BR,pt;q=0.9',
+      'Cookie': cookie, 'X-CSRFToken': c.csrftoken || ''
+    }
+  });
+}
+
+// Sync inicial: busca TODOS os seguidores e salva no DB
+async function monitorFullSync(username, userId) {
+  const insert = db.prepare('INSERT OR IGNORE INTO profile_followers (profile_username, follower_id) VALUES (?, ?)');
+  const web    = monitorAxiosWeb();
+  const mobile = monitorAxiosMobile();
+  if (!web) return;
+
+  let maxId = null, total = 0;
+  db.prepare('UPDATE monitor_profiles SET status = ? WHERE username = ?').run('syncing', username);
+  monitorSend({ type: 'sync_start', profile: username });
+
+  for (let pg = 0; pg < monitor.MAX_PAGES; pg++) {
+    try {
+      const r = await web.get(`/api/v1/friendships/${userId}/followers/`, {
+        params: { count: 50, ...(maxId ? { max_id: maxId } : {}) }
+      });
+      if (r.status !== 200) break;
+      const users = r.data?.users || [];
+      if (!users.length) break;
+      db.transaction(() => { for (const u of users) if (u.pk) insert.run(username, String(u.pk)); })();
+      total += users.length;
+      if (pg % 5 === 0) monitorSend({ type: 'sync_progress', profile: username, count: total });
+      maxId = r.data?.next_max_id || null;
+      if (!maxId) break;
+      await sleep(500);
+    } catch { break; }
+  }
+
+  db.prepare('UPDATE monitor_profiles SET follower_count = ?, status = ?, last_checked = ? WHERE username = ?')
+    .run(total, 'active', new Date().toISOString(), username);
+  monitorSend({ type: 'sync_done', profile: username, count: total });
+  console.log(`[monitor] sync @${username}: ${total} seguidores`);
+}
+
+// Poll: busca primeiras páginas e detecta novos
+async function monitorPollProfile(username) {
+  const web    = monitorAxiosWeb();
+  const mobile = monitorAxiosMobile();
+  if (!web) return;
+
+  const profile = db.prepare('SELECT * FROM monitor_profiles WHERE username = ?').get(username);
+  if (!profile || profile.status === 'syncing') return;
+
+  let userId = profile.ig_user_id;
+  try {
+    if (!userId) {
+      const { userId: uid } = await getUserId(web, username, mobile);
+      userId = uid;
+      db.prepare('UPDATE monitor_profiles SET ig_user_id = ? WHERE username = ?').run(userId, username);
+    }
+
+    const currentUsers = new Map();
+    let maxId = null;
+    for (let pg = 0; pg < monitor.POLL_PAGES; pg++) {
+      const r = await web.get(`/api/v1/friendships/${userId}/followers/`, {
+        params: { count: 50, ...(maxId ? { max_id: maxId } : {}) }
+      });
+      if (r.status !== 200) break;
+      const users = r.data?.users || [];
+      if (!users.length) break;
+      for (const u of users) if (u.pk) currentUsers.set(String(u.pk), u);
+      maxId = r.data?.next_max_id || null;
+      if (!maxId) break;
+      await sleep(400);
+    }
+
+    if (currentUsers.size === 0) return;
+
+    const storedCount = db.prepare('SELECT COUNT(*) as n FROM profile_followers WHERE profile_username = ?').get(username)?.n || 0;
+
+    if (storedCount === 0) {
+      // Ainda sem snapshot — inicia sync completo em background
+      monitorFullSync(username, userId);
+      return;
+    }
+
+    // Detecta novos
+    const storedIds = new Set(
+      db.prepare('SELECT follower_id FROM profile_followers WHERE profile_username = ?')
+        .all(username).map(r => r.follower_id)
+    );
+
+    const insertEvent    = db.prepare('INSERT OR IGNORE INTO monitor_events (profile_username, follower_id, follower_username, follower_fullname, follower_photo, detected_at) VALUES (?, ?, ?, ?, ?, ?)');
+    const insertFollower = db.prepare('INSERT OR IGNORE INTO profile_followers (profile_username, follower_id) VALUES (?, ?)');
+
+    let newCount = 0;
+    for (const [id, u] of currentUsers) {
+      if (!storedIds.has(id)) {
+        insertEvent.run(username, id, u.username || '', u.full_name || '', u.profile_pic_url || '', new Date().toISOString());
+        insertFollower.run(username, id);
+        monitorSend({ type: 'new_follower', profile: username, follower: { id, username: u.username, fullName: u.full_name || '', photoUrl: u.profile_pic_url || '' } });
+        newCount++;
+      }
+    }
+
+    db.prepare('UPDATE monitor_profiles SET last_checked = ?, follower_count = ?, status = ? WHERE username = ?')
+      .run(new Date().toISOString(), (profile.follower_count || 0) + newCount, 'active', username);
+    monitorSend({ type: 'profile_updated', profile: username, newCount, lastChecked: new Date().toISOString() });
+    if (newCount > 0) console.log(`[monitor] @${username}: ${newCount} novos seguidores`);
+
+  } catch (err) {
+    console.error(`[monitor] poll @${username}:`, err.message);
+    db.prepare('UPDATE monitor_profiles SET status = ? WHERE username = ?').run('error', username);
+    monitorSend({ type: 'profile_error', profile: username, error: err.message });
+  }
+}
+
+async function monitorRunCycle() {
+  if (monitor.polling) return;
+  monitor.polling = true;
+  const profiles = db.prepare('SELECT username FROM monitor_profiles WHERE status != ?').all('paused');
+  for (const { username } of profiles) {
+    await monitorPollProfile(username);
+    await sleep(2000);
+  }
+  monitor.polling = false;
+}
+
+function monitorStart() {
+  if (monitor.timer) return;
+  monitor.timer = setInterval(monitorRunCycle, monitor.INTERVAL);
+  console.log('[monitor] iniciado — intervalo 10min');
+}
+
+function monitorStop() {
+  if (monitor.timer) { clearInterval(monitor.timer); monitor.timer = null; }
+}
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY || '');
 
@@ -38,6 +260,9 @@ function setIg(req, data) {
 
 function buildCookie(ig) {
     if (!ig?.sessionid) return '';
+    // Usa o cookieString completo quando disponível (login via browser)
+    // para evitar detecção como bot pelo Instagram
+    if (ig.cookieString) return ig.cookieString;
     const parts = [`sessionid=${ig.sessionid}`];
     if (ig.csrftoken) parts.push(`csrftoken=${ig.csrftoken}`);
     if (ig.dsUserId)  parts.push(`ds_user_id=${ig.dsUserId}`);
@@ -46,16 +271,29 @@ function buildCookie(ig) {
 
 function igWebClient(req) {
     const ig = getIg(req);
+    const ua = ig.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
     return axios.create({
         baseURL: 'https://www.instagram.com', timeout: 25000,
         maxRedirects: 0, validateStatus: s => s < 500,
         headers: {
-            'User-Agent':       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'X-IG-App-ID':      '936619743392459', 'X-ASBD-ID': '129477',
-            'X-CSRFToken':      ig.csrftoken || '', 'X-Requested-With': 'XMLHttpRequest',
-            'Accept': '*/*', 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-            'Referer': 'https://www.instagram.com/', 'Origin': 'https://www.instagram.com',
-            'Cookie': buildCookie(ig)
+            'User-Agent':          ua,
+            'Accept':              '*/*',
+            'Accept-Language':     'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding':     'gzip, deflate, br',
+            'X-IG-App-ID':         '936619743392459',
+            'X-ASBD-ID':           '129477',
+            'X-CSRFToken':         ig.csrftoken || '',
+            'X-Requested-With':    'XMLHttpRequest',
+            'X-IG-WWW-Claim':      '0',
+            'Referer':             'https://www.instagram.com/',
+            'Origin':              'https://www.instagram.com',
+            'sec-ch-ua':           '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            'sec-ch-ua-mobile':    '?0',
+            'sec-ch-ua-platform':  '"Windows"',
+            'sec-fetch-dest':      'empty',
+            'sec-fetch-mode':      'cors',
+            'sec-fetch-site':      'same-origin',
+            'Cookie':              buildCookie(ig),
         }
     });
 }
@@ -109,6 +347,37 @@ function extractEmail(text) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// ============================================
+// Follower Snapshots — comparação para detectar novos seguidores
+// ============================================
+const SNAPSHOTS_DIR = path.join(__dirname, 'snapshots');
+if (!fs.existsSync(SNAPSHOTS_DIR)) fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true });
+
+function snapshotPath(username) {
+    return path.join(SNAPSHOTS_DIR, `followers_${username.replace(/[^a-z0-9_.-]/gi, '_')}.json`);
+}
+
+function loadFollowerSnapshot(username) {
+    try {
+        const p = snapshotPath(username);
+        if (!fs.existsSync(p)) return null;
+        return JSON.parse(fs.readFileSync(p, 'utf8'));
+    } catch { return null; }
+}
+
+function saveFollowerSnapshot(username, followerIds, followerMap) {
+    const snap = {
+        username,
+        capturedAt: new Date().toISOString(),
+        count: followerIds.length,
+        ids: followerIds,           // array de IDs (string) para comparação rápida
+        users: followerMap,         // { id: { username, fullName, photoUrl, ... } }
+    };
+    fs.writeFileSync(snapshotPath(username), JSON.stringify(snap), 'utf8');
+    return snap;
+}
+
+// ============================================
 function shortcodeToMediaId(shortcode) {
     const alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
     let id = BigInt(0);
@@ -192,15 +461,81 @@ function enrichLead(lead, bioData) {
     return lead;
 }
 
-async function getUserId(client, username) {
-    const res = await client.get('/api/v1/users/web_profile_info/', { params: { username } });
+async function getUserId(webClient, username, mobileClient) {
+    // Tentativa 1 — endpoint web
+    let res;
+    try {
+        res = await webClient.get('/api/v1/users/web_profile_info/', { params: { username } });
+    } catch (netErr) {
+        console.warn(`[getUserId @${username}] erro de rede: ${netErr.message}`);
+        throw new Error(`Erro de rede ao buscar @${username}: ${netErr.message}`);
+    }
+
+    console.log(`[getUserId @${username}] web status=${res.status} ct=${(res.headers?.['content-type']||'').slice(0,40)}`);
+
     if (res.status === 302 || res.status === 401)
-        throw new Error('Session ID inválido ou expirado. Reconecte o Instagram.');
+        throw new Error('Sessão do Instagram expirada. Clique em "Conectar IG" e reconecte sua conta.');
+
+    if (res.status === 429) {
+        console.warn(`[getUserId @${username}] 429 body: ${JSON.stringify(res.data||{}).slice(0,200)}`);
+        // Fallback: tenta endpoint mobile (diferente base URL e User-Agent → menos bloqueado)
+        if (mobileClient) {
+            try {
+                console.log(`[getUserId @${username}] tentando mobile search...`);
+                const mr = await mobileClient.get('/api/v1/users/search/', { params: { q: username, count: 5 } });
+                console.log(`[getUserId @${username}] mobile status=${mr.status}`);
+                if (mr.status === 200) {
+                    const users = mr.data?.users || [];
+                    const match = users.find(u => u.username?.toLowerCase() === username.toLowerCase());
+                    const mu = match || users[0];
+                    const mid = mu?.pk || mu?.id;
+                    if (mid) { console.log(`[getUserId @${username}] mobile OK id=${mid}`); return { userId: String(mid) }; }
+                }
+                // Fallback 2 — web_profile_info via mobile base URL
+                console.log(`[getUserId @${username}] tentando mobile web_profile_info...`);
+                const mr2 = await mobileClient.get('/api/v1/users/web_profile_info/', { params: { username } });
+                console.log(`[getUserId @${username}] mobile wpi status=${mr2.status}`);
+                if (mr2.status === 200) {
+                    const mu2 = mr2.data?.data?.user;
+                    const mid2 = mu2?.id || mu2?.pk;
+                    if (mid2) { console.log(`[getUserId @${username}] mobile wpi OK id=${mid2}`); return { userId: String(mid2) }; }
+                }
+            } catch (mErr) {
+                console.warn(`[getUserId @${username}] mobile fallback erro: ${mErr.message}`);
+            }
+        }
+        throw new Error('Instagram bloqueou temporariamente por excesso de requisições (rate limit). Aguarde 15–30 minutos e tente novamente.');
+    }
+
+    if (res.status === 400)
+        throw new Error(`Perfil @${username} não encontrado. Verifique se o nome de usuário está correto.`);
+
+    if (res.status !== 200)
+        throw new Error(`Instagram retornou status ${res.status}. Aguarde alguns minutos e tente novamente.`);
+
     igAssert(res.data, `busca de @${username}`);
+
     const user = res.data?.data?.user;
-    if (!user) throw new Error(`Perfil @${username} não encontrado ou é privado.`);
+
+    if (!user) {
+        const snippet = JSON.stringify(res.data || {}).slice(0, 200);
+        console.warn(`[getUserId @${username}] user=null. Resposta: ${snippet}`);
+
+        const bodyStr = JSON.stringify(res.data || '').toLowerCase();
+        const looksLikeAuthFail =
+            bodyStr.includes('login') || bodyStr.includes('require_login') ||
+            bodyStr.includes('not_logged_in') ||
+            res.headers?.['content-type']?.includes('text/html') ||
+            Object.keys(res.data || {}).length === 0;
+
+        if (looksLikeAuthFail)
+            throw new Error('Sessão do Instagram expirada ou inválida. Clique em "Conectar IG" e reconecte.');
+
+        throw new Error(`Perfil @${username} não encontrado ou é privado. Certifique-se de que o perfil existe e é público.`);
+    }
+
     const id = user.id || user.pk;
-    if (!id)   throw new Error(`Não foi possível obter o ID de @${username}`);
+    if (!id) throw new Error(`Não foi possível obter o ID de @${username}`);
     return { userId: id };
 }
 
@@ -265,11 +600,22 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.post('/api/login-cookie', (req, res) => {
-    const { sessionid, username, csrftoken, dsUserId } = req.body;
+    const { sessionid, username, csrftoken, dsUserId, cookieString, userAgent } = req.body;
     if (!sessionid) return res.status(400).json({ error: 'sessionid obrigatório' });
-    // username é opcional — usa dsUserId como fallback para não bloquear login automático via browser
     const user = (username || dsUserId || 'usuario').trim().replace('@', '');
-    setIg(req, { loggedIn: true, username: user, sessionid: sessionid.trim(), csrftoken: (csrftoken||'').trim(), dsUserId: (dsUserId||'').trim() });
+    const igData = {
+        loggedIn:     true,
+        username:     user,
+        sessionid:    sessionid.trim(),
+        csrftoken:    (csrftoken  || '').trim(),
+        dsUserId:     (dsUserId   || '').trim(),
+        cookieString: cookieString || '',
+        userAgent:    userAgent    || '',
+    };
+    setIg(req, igData);
+    // Atualiza credenciais do monitor automaticamente
+    monitor.credentials = { ...igData };
+    if (db.prepare('SELECT COUNT(*) as n FROM monitor_profiles').get()?.n > 0) monitorStart();
     return res.json({ success: true, user: { username: user } });
 });
 
@@ -383,6 +729,28 @@ app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), (req
 });
 
 // ============================================
+// FOLLOWER SNAPSHOT INFO — status do snapshot salvo
+// ============================================
+app.get('/api/ig/follower-snapshot', (req, res) => {
+    const { username } = req.query;
+    if (!username) return res.json({ exists: false });
+    const snap = loadFollowerSnapshot(username.replace('@',''));
+    if (!snap) return res.json({ exists: false });
+    const ageMin = Math.round((Date.now() - new Date(snap.capturedAt)) / 60000);
+    res.json({ exists: true, count: snap.count, capturedAt: snap.capturedAt, ageMin });
+});
+
+app.delete('/api/ig/follower-snapshot', (req, res) => {
+    const { username } = req.query;
+    if (!username) return res.json({ ok: false });
+    try {
+        const p = snapshotPath(username.replace('@',''));
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+        res.json({ ok: true });
+    } catch { res.json({ ok: false }); }
+});
+
+// ============================================
 // PROFILE CHECK — valida seguidores antes de capturar
 // ============================================
 app.get('/api/ig/profile-check', async (req, res) => {
@@ -450,6 +818,7 @@ app.get('/api/capture', async (req, res) => {
     if (!ig.loggedIn) return res.status(401).json({ error: 'Conecte sua conta do Instagram primeiro' });
 
     const { type='followers', target='', delay:delayMs='1500', fetchBio:fetchBioParam='false', posts='10' } = req.query;
+    console.log(`[capture] type=${type} target=${target} fetchBio=${fetchBioParam}`);
     const maxLeads       = 50; // fixo — 1 crédito = 50 leads
     const delayTime      = Math.max(parseInt(delayMs)||1500, 1000);
     const shouldFetchBio = fetchBioParam === 'true';
@@ -475,7 +844,7 @@ app.get('/api/capture', async (req, res) => {
         if (type === 'profile_analysis') {
             const username = extractUsername(target);
             send({ type:'log', message:`Iniciando análise de @${username}...` });
-            const { userId } = await getUserId(web, username);
+            const { userId } = await getUserId(web, username, mobile);
             const uMap=new Map(), followerIds=new Set(), likerCounts=new Map(), commenterCounts=new Map();
             const recentLike=new Map(), recentComment=new Map();
 
@@ -534,10 +903,77 @@ app.get('/api/capture', async (req, res) => {
                 await autoFillFollowers(web, mobile, userId, username, sentIds, maxLeads, shouldFetchBio, delayTime, sendLead, send, ()=>stopped);
             }
 
+        } else if (type==='recent_followers') {
+            const username = extractUsername(target);
+            const { userId } = await getUserId(web, username, mobile);
+            const snapshot  = loadFollowerSnapshot(username);
+
+            // Busca seguidores em batch — até 20 páginas (1000) para cobrir contas maiores
+            send({ type:'log', message: snapshot
+                ? `Buscando seguidores atuais de @${username} para comparar com snapshot...`
+                : `1ª execução — criando snapshot base de @${username}...` });
+
+            const currentMap = new Map(); // pk → user object
+            let maxId = null;
+            const maxPages = 20;
+
+            for (let pg = 0; pg < maxPages && !stopped; pg++) {
+                const r = await web.get(`/api/v1/friendships/${userId}/followers/`, {
+                    params: { count: 50, ...(maxId ? { max_id: maxId } : {}) }
+                });
+                if (r.status === 302 || r.status === 401)
+                    throw new Error('Sessão expirada. Clique em "Conectar IG" e reconecte.');
+                if (r.status === 429)
+                    throw new Error('Instagram bloqueou temporariamente. Aguarde alguns minutos.');
+                igAssert(r.data, 'recent_followers');
+                const users = r.data?.users || [];
+                if (!users.length) break;
+                for (const u of users) if (u.pk) currentMap.set(String(u.pk), u);
+                send({ type:'log', message:`Carregando... ${currentMap.size} seguidores` });
+                maxId = r.data?.next_max_id || null;
+                if (!maxId) break;
+                await sleep(600);
+            }
+
+            const currentIds  = [...currentMap.keys()];
+            const followerMap = Object.fromEntries([...currentMap.entries()].map(([k, v]) => [k, { username: v.username, fullName: v.full_name || '', photoUrl: v.profile_pic_url || '' }]));
+
+            if (!snapshot) {
+                // Primeira execução: salva snapshot e informa usuário
+                saveFollowerSnapshot(username, currentIds, followerMap);
+                send({ type:'log', message:`✅ Snapshot criado: ${currentIds.length} seguidores registrados.` });
+                send({ type:'error', message:`Snapshot criado com ${currentIds.length} seguidores de @${username}. Execute novamente em algumas horas para ver quem seguiu depois.` });
+            } else {
+                // Execuções seguintes: retorna apenas os novos
+                const oldIds   = new Set(snapshot.ids || []);
+                const newUsers = currentIds
+                    .filter(id => !oldIds.has(id))
+                    .map(id => currentMap.get(id))
+                    .filter(Boolean);
+
+                send({ type:'log', message:`✓ ${newUsers.length} novos seguidores desde ${new Date(snapshot.capturedAt).toLocaleDateString('pt-BR')}` });
+
+                // Atualiza snapshot com lista atual
+                saveFollowerSnapshot(username, currentIds, followerMap);
+
+                if (newUsers.length === 0) {
+                    send({ type:'error', message:`Nenhum seguidor novo desde o último snapshot (${new Date(snapshot.capturedAt).toLocaleDateString('pt-BR')}). Tente mais tarde.` });
+                } else {
+                    let order = 1;
+                    for (const u of newUsers) {
+                        if (stopped) break;
+                        const lead = buildLead(u, u.biography || '', u.external_url || '', `novos seguidores @${username}`);
+                        lead.isFollower          = true;
+                        lead.recentFollowerOrder = order++;
+                        sendLead(lead);
+                    }
+                }
+            }
+
         } else if (type==='followers') {
             const username=extractUsername(target);
             send({type:'log',message:`Seguidores de @${username}...`});
-            const {userId}=await getUserId(web,username);
+            const {userId}=await getUserId(web, username, mobile);
             let count=0,maxId=null;
             while(count<maxLeads&&!stopped){
                 const r=await web.get(`/api/v1/friendships/${userId}/followers/`,{params:{count:50,...(maxId?{max_id:maxId}:{})}});
@@ -570,7 +1006,7 @@ app.get('/api/capture', async (req, res) => {
 
         } else if (type==='recent_likes') {
             const username=extractUsername(target);
-            const {userId}=await getUserId(web,username);
+            const {userId}=await getUserId(web, username, mobile);
             const feed=await web.get(`/api/v1/feed/user/${userId}/`,{params:{count:postsCount}});
             igAssert(feed.data,'feed');
             const postsList=(feed.data?.items||[]).slice(0,postsCount);
@@ -595,7 +1031,7 @@ app.get('/api/capture', async (req, res) => {
             // Auto-fill se likers < 50
             if (count < maxLeads && !stopped) {
                 try {
-                    const { userId: rlUid } = await getUserId(web, username);
+                    const { userId: rlUid } = await getUserId(web, username, mobile);
                     await autoFillFollowers(web, mobile, rlUid, username, seen, maxLeads, shouldFetchBio, delayTime, sendLead, send, ()=>stopped);
                 } catch {}
             }
@@ -629,7 +1065,7 @@ app.get('/api/capture', async (req, res) => {
             const stopW=new Set(['de','do','da','dos','das','e','o','a','os','as','em','para','com','por','que','se','na','no','nas','nos','um','uma','ao','aos']);
             const tokens=keywords.flatMap(kw=>norm(kw).split(/\s+/).filter(w=>w.length>2&&!stopW.has(w)));
             const matchProf=(u,bio)=>{if(!tokens.length)return true;const t=norm([u.username,u.full_name,bio?.bio,bio?.category].join(' '));return tokens.some(tk=>t.includes(tk));};
-            const {userId:targetId}=await getUserId(web,profileTarget);
+            const {userId:targetId}=await getUserId(web, profileTarget, mobile);
             const seen=new Set(),allUsers=[];
             for(const ep of['followers','following']){
                 if(stopped)break;let maxId=null;
@@ -675,7 +1111,7 @@ app.get('/api/capture', async (req, res) => {
                 if(stopped)break;
                 send({type:'log',message:`Coletando @${uname}...`});
                 try{
-                    const {userId}=await getUserId(web,uname);
+                    const {userId}=await getUserId(web, uname, mobile);
                     const fMap=new Map();let maxId=null;
                     for(let pg=0;pg<400&&!stopped;pg++){
                         const r=await web.get(`/api/v1/friendships/${userId}/followers/`,{params:{count:50,...(maxId?{max_id:maxId}:{})}});
@@ -1090,11 +1526,24 @@ app.post('/api/ig-auth/browser-login', async (req, res) => {
                         });
                     } catch {}
 
+                    // Capturar TODOS os cookies — o Instagram moderno rejeita
+                    // chamadas com apenas 3 cookies (detecta como bot)
+                    const fullCookieStr = cookies
+                        .filter(c => c.value)
+                        .map(c => `${c.name}=${c.value}`)
+                        .join('; ');
+
+                    // Captura o User-Agent real do browser — necessário para evitar "useragent mismatch"
+                    let userAgent = '';
+                    try { userAgent = await page.evaluate(() => navigator.userAgent); } catch {}
+
                     igBrowserState.data = {
-                        sessionid: sessionid.value,
-                        csrftoken: csrftoken?.value || '',
-                        dsUserId:  dsUserId?.value  || '',
+                        sessionid:    sessionid.value,
+                        csrftoken:    csrftoken?.value || '',
+                        dsUserId:     dsUserId?.value  || '',
                         username,
+                        cookieString: fullCookieStr,
+                        userAgent,
                     };
                     igBrowserState.status = 'done';
 
@@ -1131,6 +1580,157 @@ app.post('/api/ig-auth/browser-cancel', async (req, res) => {
     igBrowserState.status = 'cancelled';
     await igBrowserCleanup();
     res.json({ success: true });
+});
+
+// ============================================
+// MONITOR DE CONCORRENTES
+// ============================================
+
+// Salva credenciais do IG para uso do monitor (chamado no login-cookie)
+app.post('/api/monitor/credentials', (req, res) => {
+    const ig = getIg(req);
+    if (!ig.loggedIn) return res.status(401).json({ error: 'Não autenticado' });
+    monitor.credentials = { ...ig };
+    res.json({ ok: true });
+});
+
+// SSE stream — frontend conecta aqui para receber eventos em tempo real
+app.get('/api/monitor/stream', (req, res) => {
+    res.setHeader('Content-Type',  'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection',    'keep-alive');
+    res.flushHeaders();
+    monitor.clients.add(res);
+
+    // Ping a cada 25s para manter conexão viva
+    const ping = setInterval(() => {
+        if (!res.writableEnded) res.write(': ping\n\n');
+        else clearInterval(ping);
+    }, 25000);
+
+    req.on('close', () => { clearInterval(ping); monitor.clients.delete(res); });
+});
+
+// GET /api/monitor/profiles — lista perfis monitorados
+app.get('/api/monitor/profiles', (req, res) => {
+    const profiles = db.prepare('SELECT username, ig_user_id, added_at, last_checked, follower_count, status FROM monitor_profiles ORDER BY added_at DESC').all();
+    res.json({ profiles });
+});
+
+// POST /api/monitor/add — adiciona perfil e inicia sync
+app.post('/api/monitor/add', async (req, res) => {
+    const ig = getIg(req);
+    if (!ig.loggedIn) return res.status(401).json({ error: 'Não autenticado' });
+    monitor.credentials = { ...ig };
+
+    const raw = (req.body.username || '').trim().replace('@', '').replace(/.*instagram\.com\//, '').replace(/\/.*/, '');
+    if (!raw) return res.status(400).json({ error: 'Username inválido' });
+
+    const existing = db.prepare('SELECT username FROM monitor_profiles WHERE username = ?').get(raw);
+    if (existing) return res.status(400).json({ error: `@${raw} já está sendo monitorado` });
+
+    db.prepare('INSERT INTO monitor_profiles (username, added_at, status) VALUES (?, ?, ?)').run(raw, new Date().toISOString(), 'pending');
+    monitorStart(); // garante que o timer está rodando
+
+    res.json({ ok: true, username: raw });
+
+    // Sync inicial em background
+    try {
+        const web    = monitorAxiosWeb();
+        const mobile = monitorAxiosMobile();
+        const { userId } = await getUserId(web, raw, mobile);
+        db.prepare('UPDATE monitor_profiles SET ig_user_id = ? WHERE username = ?').run(userId, raw);
+        await monitorFullSync(raw, userId);
+    } catch (err) {
+        console.error(`[monitor] add @${raw}:`, err.message);
+        db.prepare('UPDATE monitor_profiles SET status = ? WHERE username = ?').run('error', raw);
+        monitorSend({ type: 'profile_error', profile: raw, error: err.message });
+    }
+});
+
+// DELETE /api/monitor/remove — remove perfil e dados
+app.delete('/api/monitor/remove', (req, res) => {
+    const username = (req.body.username || req.query.username || '').trim().replace('@', '');
+    if (!username) return res.status(400).json({ error: 'Username obrigatório' });
+    db.prepare('DELETE FROM monitor_profiles  WHERE username = ?').run(username);
+    db.prepare('DELETE FROM profile_followers WHERE profile_username = ?').run(username);
+    db.prepare('DELETE FROM monitor_events    WHERE profile_username = ?').run(username);
+    res.json({ ok: true });
+});
+
+// GET /api/monitor/events — últimos 100 eventos (novos seguidores detectados)
+app.get('/api/monitor/events', (req, res) => {
+    const events = db.prepare(`
+        SELECT * FROM monitor_events ORDER BY detected_at DESC LIMIT 100
+    `).all();
+    res.json({ events });
+});
+
+// POST /api/monitor/events/seen — marca eventos como vistos
+app.post('/api/monitor/events/seen', (req, res) => {
+    db.prepare('UPDATE monitor_events SET seen = 1').run();
+    res.json({ ok: true });
+});
+
+// Retoma monitor ao iniciar (se houver perfis cadastrados)
+if (db.prepare('SELECT COUNT(*) as n FROM monitor_profiles').get()?.n > 0) monitorStart();
+
+// ============================================
+// AI Analysis — Ollama proxy
+// ============================================
+app.post('/api/ai/analyze', async (req, res) => {
+    const { lead, segment, model = 'llama3' } = req.body || {};
+    if (!lead || !segment) {
+        return res.status(400).json({ success: false, error: 'lead e segment são obrigatórios' });
+    }
+
+    const isGmaps = !!(lead.address || lead.rating != null);
+    const leadInfo = isGmaps ? [
+        `Nome: ${lead.name || '-'}`,
+        `Categoria: ${lead.category || 'não informada'}`,
+        `Avaliação: ${lead.rating != null ? `${lead.rating} estrelas (${lead.reviewCount || 0} avaliações)` : 'sem avaliação'}`,
+        `Telefone: ${lead.phone || 'não informado'}`,
+        `Site: ${lead.website ? lead.website : 'não tem site'}`,
+        `Endereço: ${lead.address || 'não informado'}`,
+    ].join('\n') : [
+        `Usuário: @${lead.username || '-'}`,
+        `Nome: ${lead.fullName || lead.username || '-'}`,
+        `Bio: ${(lead.bio || 'sem bio').slice(0, 150)}`,
+        `Seguidores: ${lead.followerCount || 0}`,
+        `Tipo de conta: ${lead.isBusinessAccount ? 'empresarial' : 'pessoal'}`,
+        `Categoria: ${lead.category || 'não informada'}`,
+        `WhatsApp: ${lead.whatsapp || 'não detectado'}`,
+        `Email: ${lead.email || 'não detectado'}`,
+        `Site: ${lead.website || 'não tem site'}`,
+    ].join('\n');
+
+    const prompt = `Você é especialista em prospecção B2B e vendas consultivas. Analise este lead para alguém que oferece: "${segment}".
+
+DADOS DO LEAD (${isGmaps ? 'Google Maps' : 'Instagram'}):
+${leadInfo}
+
+Responda SOMENTE em português, de forma direta e prática (máximo 4 linhas no total):
+1. POTENCIAL: Por que este lead tem potencial (ou não) para contratar "${segment}"? (1-2 frases)
+2. ABORDAGEM: Qual seria a primeira mensagem ideal para este lead? Seja específico e natural. (1-2 frases)`;
+
+    try {
+        const response = await axios.post('http://localhost:11434/api/generate', {
+            model,
+            prompt,
+            stream: false,
+            options: { temperature: 0.7, num_predict: 280 }
+        }, { timeout: 45000 });
+
+        res.json({ success: true, analysis: response.data?.response || '' });
+    } catch (err) {
+        const offline = err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND';
+        res.status(offline ? 503 : 500).json({
+            success: false,
+            error: offline
+                ? 'Ollama não está rodando. Inicie com: ollama serve'
+                : (err.message || 'Erro ao chamar Ollama')
+        });
+    }
 });
 
 // ============================================

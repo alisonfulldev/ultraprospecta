@@ -86,8 +86,151 @@
                 </button>
             </div>
 
+            <!-- ===== MONITOR DE CONCORRENTES ===== -->
+            <div id="monitorPanel" style="display:none">
+                <div class="sidebar-section">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+                        <h3 style="margin:0"><i class="fas fa-satellite-dish"></i> Monitor de Concorrentes</h3>
+                        <span id="monitorStatusBadge" class="monitor-badge monitor-off">Parado</span>
+                    </div>
+                    <p style="font-size:.75rem;color:var(--gray);margin:0 0 .75rem">Detecta novos seguidores automaticamente a cada 10 min e envia notificação.</p>
+                    <div style="display:flex;gap:.5rem;margin-bottom:.75rem">
+                        <input type="text" id="monitorInput" placeholder="@concorrente" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.5rem .75rem;color:#fff;font-size:.85rem;outline:none">
+                        <button onclick="monitorAddProfile()" class="btn-primary" style="padding:.5rem .9rem;font-size:.85rem;white-space:nowrap"><i class="fas fa-plus"></i></button>
+                    </div>
+                    <div id="monitorProfileList" style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.75rem"></div>
+                    <button onclick="monitorRequestNotifications()" id="btnNotifPerm" class="btn-secondary" style="width:100%;font-size:.8rem;padding:.45rem;display:none">
+                        <i class="fas fa-bell"></i> Ativar notificações do browser
+                    </button>
+                </div>
+                <div class="sidebar-section" id="monitorFeedSection" style="display:none">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+                        <h3 style="margin:0;font-size:.9rem"><i class="fas fa-bell"></i> Novos Seguidores</h3>
+                        <button onclick="monitorMarkSeen()" style="background:none;border:none;color:var(--gray);font-size:.72rem;cursor:pointer;padding:0">Marcar lidos</button>
+                    </div>
+                    <div id="monitorFeed" style="display:flex;flex-direction:column;gap:.35rem;max-height:320px;overflow-y:auto"></div>
+                </div>
+            </div>
+
+            <!-- Botão Monitor — desktop sidebar -->
+            <button onclick="openMonitorPanel()" id="btnOpenMonitor" style="width:100%;margin-bottom:.65rem;background:rgba(var(--primary-rgb),.08);border:1px solid rgba(var(--primary-rgb),.25);border-radius:10px;padding:.6rem .75rem;color:#fff;cursor:pointer;display:flex;align-items:center;gap:.55rem;font-size:.83rem;font-weight:600;position:relative;transition:background .2s" onmouseover="this.style.background='rgba(var(--primary-rgb),.16)'" onmouseout="this.style.background='rgba(var(--primary-rgb),.08)'">
+                <i class="fas fa-satellite-dish" style="color:var(--primary);font-size:.95rem"></i>
+                <span style="flex:1;text-align:left">Monitor de Concorrentes</span>
+                <span id="monitorUnreadBadge" style="display:none;background:#e74c3c;color:#fff;border-radius:50%;width:18px;height:18px;font-size:.65rem;align-items:center;justify-content:center;flex-shrink:0"></span>
+            </button>
+
+            <!-- ===== FLOW TOGGLE (Opção 1 vs Opção 2) ===== -->
+            <div class="flow-toggle" id="flowToggle">
+                <button class="flow-btn active" id="btnFlowAuto" onclick="setFlowMode('auto')">
+                    <div class="flow-btn-inner">
+                        <div class="flow-btn-top">
+                            <span class="flow-new-badge">NOVO</span>
+                            <strong><i class="fas fa-magic"></i> Automático</strong>
+                        </div>
+                        <small>Score por segmento + IA opcional</small>
+                    </div>
+                    <span class="flow-rec-badge">RECOMENDADO</span>
+                </button>
+                <button class="flow-btn" id="btnFlowAdvanced" onclick="setFlowMode('advanced')">
+                    <div class="flow-btn-inner">
+                        <div class="flow-btn-top">
+                            <strong><i class="fas fa-sliders-h"></i> Avançado</strong>
+                        </div>
+                        <small>Configuração manual completa</small>
+                    </div>
+                </button>
+            </div>
+
+            <!-- ===== SIDEBAR AUTO — INSTAGRAM ===== -->
+            <div id="sidebarAutoIG">
+                <div class="sidebar-section">
+                    <h3><i class="fas fa-magic"></i> Captura Automática</h3>
+                    <div class="form-group">
+                        <label>Perfil do Concorrente</label>
+                        <input type="text" id="autoIGTarget" placeholder="@usuario ou URL do Instagram">
+                    </div>
+                    <div class="form-group">
+                        <label>Posts a analisar</label>
+                        <select id="autoIGPosts">
+                            <option value="10" selected>10 posts recentes</option>
+                            <option value="20">20 posts</option>
+                            <option value="30">30 posts</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="segment-label">
+                            Seu Segmento / Serviço
+                            <span class="required-badge">OBRIGATÓRIO</span>
+                        </label>
+                        <input type="text" id="autoSegmentIG" placeholder="Ex: criação de sites, tráfego pago...">
+                        <small class="hint">Define o critério de ranking dos leads</small>
+                    </div>
+                </div>
+                <div class="sidebar-section">
+                    <div class="ai-section-header">
+                        <h3><i class="fas fa-robot"></i> Análise com IA</h3>
+                        <span class="optional-badge">OLLAMA — opcional</span>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="autoUseAIIG" onchange="toggleAIConfig('ig')">
+                            <span>Analisar top 10 com IA local</span>
+                        </label>
+                    </div>
+                    <div id="autoAIConfigIG" style="display:none">
+                        <div class="form-group">
+                            <label>Modelo Ollama</label>
+                            <input type="text" id="autoAIModelIG" value="llama3" placeholder="llama3, mistral, phi3...">
+                            <small class="hint">Ollama deve estar rodando em localhost:11434</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== SIDEBAR AUTO — GOOGLE MAPS ===== -->
+            <div id="sidebarAutoGoogle" style="display:none">
+                <div class="sidebar-section">
+                    <h3><i class="fas fa-magic"></i> Busca Automática</h3>
+                    <div class="form-group">
+                        <label>Palavra-chave / Tipo de negócio</label>
+                        <input type="text" id="autoGmapsTerm" placeholder="Ex: confeitaria, academia, clínica...">
+                    </div>
+                    <div class="form-group">
+                        <label>Cidade (opcional)</label>
+                        <input type="text" id="autoGmapsCity" placeholder="Ex: São Paulo, Campinas...">
+                    </div>
+                    <div class="form-group">
+                        <label class="segment-label">
+                            Seu Segmento / Serviço
+                            <span class="required-badge">OBRIGATÓRIO</span>
+                        </label>
+                        <input type="text" id="autoSegmentGmaps" placeholder="Ex: criação de sites, tráfego pago...">
+                        <small class="hint">Define o critério de ranking dos leads</small>
+                    </div>
+                </div>
+                <div class="sidebar-section">
+                    <div class="ai-section-header">
+                        <h3><i class="fas fa-robot"></i> Análise com IA</h3>
+                        <span class="optional-badge">OLLAMA — opcional</span>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="autoUseAIGmaps" onchange="toggleAIConfig('gmaps')">
+                            <span>Analisar top 10 com IA local</span>
+                        </label>
+                    </div>
+                    <div id="autoAIConfigGmaps" style="display:none">
+                        <div class="form-group">
+                            <label>Modelo Ollama</label>
+                            <input type="text" id="autoAIModelGmaps" value="llama3" placeholder="llama3, mistral, phi3...">
+                            <small class="hint">Ollama deve estar rodando em localhost:11434</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- ===== SIDEBAR INSTAGRAM ===== -->
-            <div id="sidebarIG">
+            <div id="sidebarIG" style="display:none">
 
             <!-- Prompt de login (visível quando desconectado) -->
             <div id="igLoginPrompt" class="sidebar-section" style="display:none">
@@ -203,6 +346,7 @@
                         <small class="hint">Mínimo 2 perfis. Retorna quem segue 2 ou mais.</small>
                     </div>
                 </div>
+
 
                 <!-- followers -->
                 <div class="capture-config" id="config-followers" style="display:none">
@@ -477,6 +621,23 @@
                     </table>
                 </div>
             </div>
+
+            <!-- Banner: Ver mais leads (aparece só no modo trial) -->
+            <div id="freeTrialBanner" style="display:none">
+                <div class="free-trial-banner">
+                    <div class="free-trial-left">
+                        <div class="free-trial-icon"><i class="fas fa-lock"></i></div>
+                        <div>
+                            <strong>Você está vendo 4 leads gratuitos</strong>
+                            <p>Desbloqueie os 50 melhores leads qualificados com WhatsApp, email e score.</p>
+                        </div>
+                    </div>
+                    <button class="btn btn-success free-trial-btn" onclick="openBuyModal()">
+                        <i class="fas fa-unlock"></i> Ver mais leads — R$10
+                    </button>
+                </div>
+            </div>
+
         </div>
     </main>
 
@@ -493,7 +654,10 @@
             <div class="mw-dots" id="mwDots">
                 <span class="mw-dot active"></span>
             </div>
-            <div style="width:36px"></div>
+            <button onclick="mwGoToMonitor()" style="width:36px;height:36px;background:none;border:none;color:rgba(255,255,255,.65);cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0" title="Monitor">
+                <i class="fas fa-satellite-dish"></i>
+                <span id="monitorTopbarBadge" style="display:none;position:absolute;top:4px;right:4px;background:#e74c3c;border-radius:50%;width:8px;height:8px"></span>
+            </button>
         </div>
 
         <!-- Área de steps (scrollável) -->
@@ -519,6 +683,161 @@
                         <strong>Google Maps</strong>
                         <small>Empresas por palavra-chave e cidade</small>
                     </button>
+                </div>
+            </div>
+
+            <!-- ── STEP: Escolher Modo (Auto vs Avançado) ── -->
+            <div class="mw-step" id="mwStepModeSelect" style="display:none">
+                <div class="mw-step-hero">
+                    <div class="mw-hero-icon">
+                        <i class="fas fa-magic"></i>
+                    </div>
+                    <h2>Como quer capturar?</h2>
+                    <p>Escolha o modo de captura</p>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:.75rem;padding:0 .25rem 1rem">
+                    <button class="mw-mode-card" id="mwModeAutoBtn" onclick="mwChooseMode('auto')">
+                        <div class="mw-mode-card-top">
+                            <span class="flow-new-badge">NOVO</span>
+                            <strong><i class="fas fa-magic"></i> Automático Inteligente</strong>
+                        </div>
+                        <small>Rankeia leads pelo seu segmento automaticamente</small>
+                        <span class="flow-rec-badge mw-mode-rec">RECOMENDADO</span>
+                    </button>
+                    <button class="mw-mode-card" id="mwModeAdvBtn" onclick="mwChooseMode('advanced')">
+                        <div class="mw-mode-card-top">
+                            <strong><i class="fas fa-sliders-h"></i> Avançado</strong>
+                        </div>
+                        <small>Configuração manual completa</small>
+                    </button>
+                    <button class="mw-mode-card mw-mode-card-monitor" onclick="mwChooseMode('monitor')">
+                        <div class="mw-mode-card-top">
+                            <strong><i class="fas fa-satellite-dish"></i> Monitor de Concorrentes</strong>
+                        </div>
+                        <small>Receba notificações quando alguém novo seguir seu concorrente</small>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ── STEP: Monitor ── -->
+            <div class="mw-step" id="mwStepMonitor" style="display:none">
+                <div class="mw-step-hero">
+                    <div class="mw-hero-icon" style="background:rgba(var(--primary-rgb),.15)">
+                        <i class="fas fa-satellite-dish" style="color:var(--primary)"></i>
+                    </div>
+                    <h2>Monitor de Concorrentes</h2>
+                    <p>Fique por dentro de quem está seguindo seus concorrentes</p>
+                </div>
+                <div style="padding:0 .25rem 1rem;display:flex;flex-direction:column;gap:.75rem">
+                    <div style="background:var(--surface2);border-radius:12px;padding:1rem;display:flex;flex-direction:column;gap:.6rem">
+                        <div style="display:flex;gap:.7rem;align-items:flex-start">
+                            <i class="fas fa-bell" style="color:var(--primary);margin-top:.15rem;flex-shrink:0"></i>
+                            <span style="font-size:.85rem">Adicione perfis de concorrentes e receba <strong>notificações em tempo real</strong> quando alguém novo os seguir.</span>
+                        </div>
+                        <div style="display:flex;gap:.7rem;align-items:flex-start">
+                            <i class="fas fa-clock" style="color:var(--primary);margin-top:.15rem;flex-shrink:0"></i>
+                            <span style="font-size:.85rem">O sistema verifica automaticamente a cada <strong>10 minutos</strong>, mesmo com o app em background.</span>
+                        </div>
+                        <div style="display:flex;gap:.7rem;align-items:flex-start">
+                            <i class="fas fa-user-plus" style="color:var(--primary);margin-top:.15rem;flex-shrink:0"></i>
+                            <span style="font-size:.85rem">Cada novo seguidor detectado vira um <strong>lead potencial</strong> para você abordar na frente da concorrência.</span>
+                        </div>
+                        <div style="display:flex;gap:.7rem;align-items:flex-start">
+                            <i class="fas fa-database" style="color:var(--primary);margin-top:.15rem;flex-shrink:0"></i>
+                            <span style="font-size:.85rem">Dados salvos <strong>localmente</strong> — sem banco externo. Funciona local e no Railway.</span>
+                        </div>
+                    </div>
+                    <button onclick="mwGoToMonitor()" class="btn-primary" style="padding:.85rem;font-size:.95rem;font-weight:700">
+                        <i class="fas fa-satellite-dish"></i> Abrir Monitor
+                    </button>
+                </div>
+            </div>
+
+            <!-- ── STEP AUTO IG: Configurar ── -->
+            <div class="mw-step" id="mwStepAutoIGConfig" style="display:none">
+                <div class="mw-step-header">
+                    <h2><i class="fas fa-magic"></i> Captura Automática</h2>
+                    <p>Rankeia os melhores leads pelo seu segmento</p>
+                </div>
+                <div class="mw-form">
+                    <div class="mw-form-group">
+                        <label>Perfil do Concorrente</label>
+                        <input type="text" id="mwAutoIGTarget" placeholder="@usuario ou URL do Instagram" autocomplete="off">
+                    </div>
+                    <div class="mw-form-group">
+                        <label>Posts a analisar</label>
+                        <select id="mwAutoIGPosts">
+                            <option value="10" selected>10 posts recentes</option>
+                            <option value="20">20 posts</option>
+                            <option value="30">30 posts</option>
+                        </select>
+                    </div>
+                    <div class="mw-form-group">
+                        <label style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+                            Seu Segmento / Serviço
+                            <span class="required-badge">OBRIGATÓRIO</span>
+                        </label>
+                        <input type="text" id="mwAutoIGSegment" placeholder="Ex: criação de sites, tráfego pago..." autocomplete="off">
+                        <small class="mw-hint">Define o critério de ranking dos leads</small>
+                    </div>
+                    <details class="mw-advanced">
+                        <summary>IA com Ollama <span style="color:rgba(255,255,255,.72);font-weight:400">(opcional)</span></summary>
+                        <div style="margin-top:.875rem">
+                            <div class="mw-checks-group">
+                                <label class="mw-check-item">
+                                    <input type="checkbox" id="mwAutoIGUseAI">
+                                    <span><i class="fas fa-robot" style="color:var(--primary)"></i> Analisar top 10 com IA local</span>
+                                </label>
+                            </div>
+                            <div class="mw-form-group" style="margin-top:.75rem">
+                                <label>Modelo Ollama</label>
+                                <input type="text" id="mwAutoIGAIModel" value="llama3" placeholder="llama3, mistral...">
+                                <small class="mw-hint">Ollama deve estar em localhost:11434</small>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+            </div>
+
+            <!-- ── STEP AUTO Google: Configurar ── -->
+            <div class="mw-step" id="mwStepAutoGoogleConfig" style="display:none">
+                <div class="mw-step-header">
+                    <h2><i class="fas fa-magic"></i> Busca Automática</h2>
+                    <p>Rankeia os melhores leads pelo seu segmento</p>
+                </div>
+                <div class="mw-form">
+                    <div class="mw-form-group">
+                        <label>Palavra-chave / Tipo de negócio</label>
+                        <input type="text" id="mwAutoGmapsTerm" placeholder="Ex: confeitaria, academia, clínica..." autocomplete="off">
+                    </div>
+                    <div class="mw-form-group">
+                        <label>Cidade (opcional)</label>
+                        <input type="text" id="mwAutoGmapsCity" placeholder="Ex: São Paulo, Campinas...">
+                    </div>
+                    <div class="mw-form-group">
+                        <label style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+                            Seu Segmento / Serviço
+                            <span class="required-badge">OBRIGATÓRIO</span>
+                        </label>
+                        <input type="text" id="mwAutoGmapsSegment" placeholder="Ex: criação de sites, tráfego pago..." autocomplete="off">
+                        <small class="mw-hint">Define o critério de ranking dos leads</small>
+                    </div>
+                    <details class="mw-advanced">
+                        <summary>IA com Ollama <span style="color:rgba(255,255,255,.72);font-weight:400">(opcional)</span></summary>
+                        <div style="margin-top:.875rem">
+                            <div class="mw-checks-group">
+                                <label class="mw-check-item">
+                                    <input type="checkbox" id="mwAutoGmapsUseAI">
+                                    <span><i class="fas fa-robot" style="color:var(--primary)"></i> Analisar top 10 com IA local</span>
+                                </label>
+                            </div>
+                            <div class="mw-form-group" style="margin-top:.75rem">
+                                <label>Modelo Ollama</label>
+                                <input type="text" id="mwAutoGmapsAIModel" value="llama3" placeholder="llama3, mistral...">
+                                <small class="mw-hint">Ollama deve estar em localhost:11434</small>
+                            </div>
+                        </div>
+                    </details>
                 </div>
             </div>
 
@@ -963,6 +1282,16 @@
                 </button>
             </div>
 
+            <!-- Monitor de Concorrentes -->
+            <div class="mw-menu-section" style="margin-top:1rem">
+                <p class="mw-menu-section-title"><i class="fas fa-satellite-dish"></i> Monitoramento</p>
+                <button onclick="mwCloseMenu(); mwGoToMonitor()" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:.65rem .85rem;color:#fff;cursor:pointer;display:flex;align-items:center;gap:.6rem;font-size:.85rem;text-align:left">
+                    <i class="fas fa-satellite-dish" style="color:var(--primary)"></i>
+                    <span style="flex:1">Monitor de Concorrentes</span>
+                    <span id="mwMenuMonitorBadge" style="display:none;background:#e74c3c;color:#fff;border-radius:50%;min-width:18px;height:18px;font-size:.65rem;align-items:center;justify-content:center;padding:0 3px"></span>
+                </button>
+            </div>
+
             <!-- Status IG -->
             <div class="mw-menu-section" style="margin-top:1.25rem">
                 <p class="mw-menu-section-title">
@@ -1129,82 +1458,71 @@
 
 </div><!-- /app-container -->
 
-<!-- Login Modal -->
+<!-- Login Modal — browser automático -->
 <div class="modal" id="loginModal">
     <div class="modal-content modal-sm">
         <div class="modal-header">
-            <h2><i class="fab fa-instagram"></i> Login no Instagram</h2>
-            <button class="modal-close" id="closeLoginModal">&times;</button>
+            <h2><i class="fab fa-instagram"></i> Conectar Instagram</h2>
+            <button class="modal-close" id="closeLoginModal" onclick="cancelBrowserLogin()">&times;</button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" style="padding:1.5rem">
 
-            <!-- Aviso conta secundária -->
-            <div style="background:rgba(243,156,18,.12);border:1px solid rgba(243,156,18,.4);border-radius:8px;padding:.85rem 1rem;margin-bottom:1.25rem;display:flex;gap:.6rem;align-items:flex-start">
-                <span style="font-size:1.1rem;flex-shrink:0">⚠️</span>
-                <div>
-                    <strong style="color:#F39C12;font-size:.83rem;display:block;margin-bottom:.2rem">Use uma conta secundária ou fake</strong>
-                    <span style="color:rgba(255,255,255,.85);font-size:.78rem;line-height:1.5">Nunca conecte sua conta principal. Crie uma conta nova no Instagram só para usar aqui — isso protege o seu perfil pessoal.</span>
-                </div>
-            </div>
-
-            <div class="login-tabs">
-                <button class="login-tab active" data-tab="cookie"><i class="fas fa-cookie-bite"></i> Session ID</button>
-                <button class="login-tab" data-tab="password"><i class="fas fa-key"></i> Senha</button>
-            </div>
-
-            <div id="tabCookie">
-                <p class="login-info"><i class="fas fa-info-circle"></i> Mais confiável. Copie os cookies do seu browser.</p>
-                <ol class="cookie-steps">
-                    <li>Abra <strong>instagram.com</strong> no Chrome logado</li>
-                    <li><strong>F12</strong> → Application → Cookies → instagram.com</li>
-                    <li>Copie os valores de <strong>sessionid</strong>, <strong>csrftoken</strong> e <strong>ds_user_id</strong></li>
-                </ol>
-                <div class="form-group">
-                    <label>Seu @usuário</label>
-                    <input type="text" id="igCookieUsername" placeholder="seu_usuario" autocomplete="off">
-                </div>
-                <div class="form-group">
-                    <label>sessionid</label>
-                    <input type="text" id="igSessionId" placeholder="Cole o valor do sessionid" autocomplete="off">
-                </div>
-                <div class="form-group">
-                    <label>csrftoken</label>
-                    <input type="text" id="igCsrfToken" placeholder="Cole o valor do csrftoken" autocomplete="off">
-                </div>
-                <div class="form-group">
-                    <label>ds_user_id</label>
-                    <input type="text" id="igDsUserId" placeholder="Cole o valor do ds_user_id" autocomplete="off">
-                </div>
-            </div>
-
-            <div id="tabPassword" style="display:none">
-                <p class="login-info"><i class="fas fa-info-circle"></i> Use uma conta secundária.</p>
-                <div id="loginStep1">
-                    <div class="form-group">
-                        <label>Usuário</label>
-                        <input type="text" id="igUsername" placeholder="seu_usuario" autocomplete="off">
+            <!-- Estado: pronto para iniciar -->
+            <div id="lgStateIdle">
+                <div style="text-align:center;padding:.5rem 0 1.25rem">
+                    <div style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#833ab4,#fd1d1d,#fcb045);display:flex;align-items:center;justify-content:center;margin:0 auto .875rem">
+                        <i class="fab fa-instagram" style="font-size:1.8rem;color:#fff"></i>
                     </div>
-                    <div class="form-group">
-                        <label>Senha</label>
-                        <input type="password" id="igPassword" placeholder="••••••••" autocomplete="off">
-                    </div>
+                    <h3 style="font-size:1.05rem;font-weight:700;margin-bottom:.4rem">Entrar no Instagram</h3>
+                    <p style="font-size:.82rem;color:rgba(255,255,255,.65);line-height:1.6;max-width:300px;margin:0 auto">
+                        Um navegador Chrome vai abrir com o Instagram.<br>
+                        Faça login normalmente — o sistema captura a sessão sozinho.
+                    </p>
                 </div>
-                <div id="loginStep2" style="display:none">
-                    <p class="login-info"><i class="fas fa-shield-alt"></i> Código enviado pelo Instagram.</p>
-                    <div class="form-group">
-                        <label>Código de Verificação</label>
-                        <input type="text" id="igCode" placeholder="123456" maxlength="8" style="letter-spacing:4px;font-size:1.3rem;text-align:center">
-                    </div>
+
+                <div style="background:rgba(243,156,18,.1);border:1px solid rgba(243,156,18,.3);border-radius:8px;padding:.75rem 1rem;margin-bottom:1.25rem;display:flex;gap:.5rem;align-items:flex-start">
+                    <i class="fas fa-exclamation-triangle" style="color:#F39C12;margin-top:.1rem;flex-shrink:0"></i>
+                    <span style="font-size:.78rem;color:rgba(255,255,255,.8);line-height:1.5">Use uma conta <strong>secundária</strong> — nunca a sua conta pessoal principal.</span>
                 </div>
+
+                <button class="btn btn-success btn-block" onclick="startBrowserLogin()" style="justify-content:center;font-size:.95rem;padding:.85rem">
+                    <i class="fas fa-globe"></i> Abrir Instagram no navegador
+                </button>
             </div>
 
-            <p class="login-error" id="loginError" style="display:none"></p>
-        </div>
-        <div class="modal-footer">
-            <button class="btn btn-outline" id="btnCancelLogin">Cancelar</button>
-            <button class="btn btn-success" id="btnConfirmLogin">
-                <i class="fas fa-sign-in-alt"></i> Entrar
-            </button>
+            <!-- Estado: aguardando login no Chrome -->
+            <div id="lgStateWaiting" style="display:none;text-align:center;padding:.5rem 0">
+                <div class="lg-browser-anim">
+                    <div class="lg-pulse-ring"></div>
+                    <i class="fab fa-instagram lg-pulse-icon" id="lgWaitIcon"></i>
+                </div>
+                <p id="lgWaitMsg" style="font-size:.88rem;color:rgba(255,255,255,.8);margin:.875rem 0 .4rem;font-weight:600">Chrome aberto — faça login no Instagram</p>
+                <p style="font-size:.76rem;color:rgba(255,255,255,.45);margin-bottom:1.5rem">Aguardando você entrar na conta...</p>
+                <button class="btn btn-outline btn-block" onclick="cancelBrowserLogin()" style="justify-content:center">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
+            </div>
+
+            <!-- Estado: conectado -->
+            <div id="lgStateSuccess" style="display:none;text-align:center;padding:.5rem 0">
+                <div style="width:56px;height:56px;border-radius:50%;background:rgba(0,200,83,.15);border:2px solid var(--primary);display:flex;align-items:center;justify-content:center;margin:0 auto .875rem">
+                    <i class="fas fa-check" style="color:var(--primary);font-size:1.4rem"></i>
+                </div>
+                <p style="font-weight:700;font-size:.95rem;margin-bottom:.3rem">Conectado!</p>
+                <p id="lgSuccessUser" style="font-size:.82rem;color:rgba(255,255,255,.6);margin-bottom:1.25rem"></p>
+                <button class="btn btn-success btn-block" onclick="closeLoginModal()" style="justify-content:center">
+                    Continuar <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+
+            <!-- Estado: erro -->
+            <div id="lgStateError" style="display:none">
+                <div style="background:rgba(231,76,60,.12);border:1px solid rgba(231,76,60,.25);border-radius:8px;padding:1rem;margin-bottom:1rem;font-size:.82rem;color:#FF6B6B" id="lgErrorMsg"></div>
+                <button class="btn btn-outline btn-block" onclick="resetLoginModal()" style="justify-content:center">
+                    <i class="fas fa-redo"></i> Tentar novamente
+                </button>
+            </div>
+
         </div>
     </div>
 </div>
@@ -1239,6 +1557,31 @@
 </div>
 
 <div class="toast-container" id="toastContainer"></div>
+
+<!-- ── MODAL: Análise IA do Lead ── -->
+<div class="modal" id="aiModal">
+    <div class="modal-content" style="max-width:580px">
+        <div class="modal-header">
+            <h2><i class="fas fa-robot"></i> Análise IA — <span id="aiModalLeadName">Lead</span></h2>
+            <button class="modal-close" onclick="closeAIModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="padding:1.25rem 1.5rem">
+            <div id="aiModalSegmentInfo" style="font-size:.8rem;color:rgba(255,255,255,.6);margin-bottom:1rem"></div>
+            <div id="aiModalLoading" style="text-align:center;padding:2rem 0">
+                <div class="ai-spinner"></div>
+                <p style="margin-top:.75rem;color:rgba(255,255,255,.7);font-size:.85rem" id="aiModalLoadingText">Analisando lead com <strong id="aiModalModelName">llama3</strong>...</p>
+                <small style="color:rgba(255,255,255,.45)">Isso pode levar alguns segundos</small>
+            </div>
+            <div id="aiModalResult" style="display:none">
+                <div class="ai-result-card" id="aiModalContent"></div>
+            </div>
+            <div id="aiModalError" style="display:none" class="ai-error-card"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeAIModal()">Fechar</button>
+        </div>
+    </div>
+</div>
 
 <!-- ── MODAL: Comprar Leads ── -->
 <div class="modal" id="buyModal">
@@ -1304,5 +1647,37 @@
 </div>
 
 <script src="app.js"></script>
+
+<!-- ===== MONITOR SCREEN (mobile fullscreen) ===== -->
+<div id="mwMonitorScreen" class="mw-fullscreen" style="display:none;flex-direction:column">
+    <div class="mwcs-topbar">
+        <button class="mwcs-x-btn" onclick="closeMobileMonitor()"><i class="fas fa-arrow-left"></i></button>
+        <span class="mwcs-topbar-title"><i class="fas fa-satellite-dish"></i> Monitor</span>
+        <div style="width:36px"></div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:1rem">
+        <!-- Adicionar perfil -->
+        <div style="background:var(--surface2);border-radius:12px;padding:1rem">
+            <p style="font-size:.8rem;color:var(--gray);margin:0 0 .75rem">Detecta novos seguidores a cada 10 min e envia notificação.</p>
+            <div style="display:flex;gap:.5rem">
+                <input type="text" id="monitorInputMobile" placeholder="@concorrente" style="flex:1;background:var(--surface3);border:1px solid var(--border);border-radius:8px;padding:.55rem .75rem;color:#fff;font-size:.9rem;outline:none">
+                <button onclick="monitorAddProfileMobile()" class="btn-primary" style="padding:.55rem 1rem;font-size:.9rem"><i class="fas fa-plus"></i></button>
+            </div>
+            <button onclick="monitorRequestNotifications()" id="btnNotifPermMobile" class="btn-secondary" style="width:100%;font-size:.8rem;padding:.5rem;margin-top:.6rem;display:none">
+                <i class="fas fa-bell"></i> Ativar notificações
+            </button>
+        </div>
+        <!-- Lista de perfis -->
+        <div id="monitorProfileListMobile" style="display:flex;flex-direction:column;gap:.4rem"></div>
+        <!-- Feed de eventos -->
+        <div id="monitorFeedSectionMobile" style="display:none;background:var(--surface2);border-radius:12px;padding:1rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
+                <strong style="font-size:.9rem"><i class="fas fa-bell"></i> Novos Seguidores</strong>
+                <button onclick="monitorMarkSeen()" style="background:none;border:none;color:var(--gray);font-size:.72rem;cursor:pointer">Marcar lidos</button>
+            </div>
+            <div id="monitorFeedMobile" style="display:flex;flex-direction:column;gap:.4rem"></div>
+        </div>
+    </div>
+</div>
 </body>
 </html>

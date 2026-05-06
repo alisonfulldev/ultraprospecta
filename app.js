@@ -21,6 +21,34 @@ function getCreditsIG()     { return parseInt(localStorage.getItem(CREDITS_KEY_I
 function getCreditsGoogle() { return parseInt(localStorage.getItem(CREDITS_KEY_GOOGLE) || '0'); }
 function getActiveCredits() { return state.activeSource === 'google' ? getCreditsGoogle() : getCreditsIG(); }
 
+const FREE_TRIAL_LEADS = 4;
+function isFreeTrial()  { return getActiveCredits() <= 0; }
+
+function showFreeTrialBanner() {
+    const el = document.getElementById('freeTrialBanner');
+    if (el) el.style.display = 'block';
+}
+function hideFreeTrialBanner() {
+    const el = document.getElementById('freeTrialBanner');
+    if (el) el.style.display = 'none';
+}
+
+// Adiciona os leads do trial diretamente na tabela (sem preview, sem crédito, sem PDF)
+function commitFreeTrialLeads() {
+    const toAdd = state.pendingLeads.slice(0, FREE_TRIAL_LEADS);
+    toAdd.forEach(lead => {
+        addLeadToHistory(lead);
+        state.leads.push(lead);
+    });
+    state.pendingLeads      = [];
+    state.duplicatesSkipped = 0;
+    renderAllLeads();
+    updateCounts();
+    updateHistoryInfo();
+    finishCapture(`${toAdd.length} leads gratuitos capturados — compre créditos para ver os 50 melhores`, 'success', true);
+    showFreeTrialBanner();
+}
+
 function setCreditsIG(n)     { localStorage.setItem(CREDITS_KEY_IG,     String(Math.max(0, n))); updateCreditsUI(); }
 function setCreditsGoogle(n) { localStorage.setItem(CREDITS_KEY_GOOGLE, String(Math.max(0, n))); updateCreditsUI(); }
 function deductCredit()    {
@@ -42,6 +70,7 @@ function addCredits(n, type) {
             ), 600);
         }
     }
+    hideFreeTrialBanner();
     // Após compra: re-executa o step de créditos do wizard para auto-avançar
     setTimeout(() => {
         if (mwState.currentStep === 'ig_credits'     && t !== 'google') mwSetupCreditsStep('ig');
@@ -102,7 +131,11 @@ const state = {
     activeSource: 'instagram', // 'instagram' | 'google'
     selectedPackType: 'instagram',
     pendingLeads: [],
-    duplicatesSkipped: 0
+    duplicatesSkipped: 0,
+    flowMode: 'auto',          // 'auto' | 'advanced'
+    segmentProfile: null,      // resultado de analyzeSegment()
+    autoSegment: '',           // texto do segmento no modo auto
+    autoCollecting: false      // true durante coleta no modo auto (ignora corte por crédito)
 };
 
 // ============================================
@@ -195,8 +228,14 @@ function setSource(source) {
 
     document.getElementById('btnSourceIG').classList.toggle('active',     source === 'instagram');
     document.getElementById('btnSourceGoogle').classList.toggle('active', source === 'google');
-    document.getElementById('sidebarIG').style.display     = source === 'instagram' ? '' : 'none';
-    document.getElementById('sidebarGoogle').style.display = source === 'google'    ? '' : 'none';
+
+    // Modo avançado: mostra sidebars originais
+    const isAdv = state.flowMode === 'advanced';
+    document.getElementById('sidebarIG').style.display          = (source === 'instagram' && isAdv) ? '' : 'none';
+    document.getElementById('sidebarGoogle').style.display      = (source === 'google'    && isAdv) ? '' : 'none';
+    // Modo auto: mostra sidebars automáticos
+    document.getElementById('sidebarAutoIG').style.display      = (source === 'instagram' && !isAdv) ? '' : 'none';
+    document.getElementById('sidebarAutoGoogle').style.display  = (source === 'google'    && !isAdv) ? '' : 'none';
 
     // Troca cabeçalho da tabela
     document.getElementById('theadIG').style.display     = source === 'instagram' ? '' : 'none';
@@ -219,6 +258,251 @@ function setSource(source) {
 
     // Pré-seleciona pack no modal
     state.selectedPackType = source === 'google' ? 'google' : 'instagram';
+}
+
+// ============================================
+// Flow Mode (Auto / Avançado)
+// ============================================
+function setFlowMode(mode) {
+    state.flowMode = mode;
+    const isAuto = mode === 'auto';
+
+    document.getElementById('btnFlowAuto').classList.toggle('active',     isAuto);
+    document.getElementById('btnFlowAdvanced').classList.toggle('active', !isAuto);
+
+    const src = state.activeSource;
+    document.getElementById('sidebarIG').style.display          = (src === 'instagram' && !isAuto) ? '' : 'none';
+    document.getElementById('sidebarGoogle').style.display      = (src === 'google'    && !isAuto) ? '' : 'none';
+    document.getElementById('sidebarAutoIG').style.display      = (src === 'instagram' &&  isAuto) ? '' : 'none';
+    document.getElementById('sidebarAutoGoogle').style.display  = (src === 'google'    &&  isAuto) ? '' : 'none';
+}
+
+// ============================================
+// Segment Scoring Engine
+// ============================================
+// ============================================
+// Follower Snapshot UI helpers
+// ============================================
+let _rfSnapTimer = null;
+function checkFollowerSnapshot(rawTarget) {
+    clearTimeout(_rfSnapTimer);
+    const infoEl   = document.getElementById('rfSnapshotInfo');
+    const noEl     = document.getElementById('rfNoSnapshot');
+    const textEl   = document.getElementById('rfSnapshotText');
+    if (!rawTarget?.trim()) {
+        if (infoEl) infoEl.style.display = 'none';
+        if (noEl)   noEl.style.display   = 'none';
+        return;
+    }
+    _rfSnapTimer = setTimeout(async () => {
+        const username = rawTarget.trim().replace(/^@/, '').replace(/.*instagram\.com\//i,'').replace(/\/.*/,'');
+        try {
+            const r = await fetch(`/api/ig/follower-snapshot?username=${encodeURIComponent(username)}`);
+            const d = await r.json();
+            if (d.exists) {
+                const age = d.ageMin < 60
+                    ? `${d.ageMin} min atrás`
+                    : `${Math.round(d.ageMin / 60)}h atrás`;
+                if (textEl) textEl.textContent = `📸 Snapshot: ${d.count} seguidores (${age}) — próxima captura mostra apenas NOVOS`;
+                if (infoEl) infoEl.style.display = 'block';
+                if (noEl)   noEl.style.display   = 'none';
+            } else {
+                if (infoEl) infoEl.style.display = 'none';
+                if (noEl)   noEl.style.display   = 'block';
+            }
+        } catch {}
+    }, 600);
+}
+
+async function resetFollowerSnapshot() {
+    const rawTarget = document.getElementById('rfTargetInput')?.value?.trim() || '';
+    if (!rawTarget) return;
+    const username = rawTarget.replace(/^@/, '').replace(/.*instagram\.com\//i,'').replace(/\/.*/,'');
+    await fetch(`/api/ig/follower-snapshot?username=${encodeURIComponent(username)}`, { method: 'DELETE' });
+    checkFollowerSnapshot(rawTarget);
+    showToast('Snapshot resetado — próxima captura cria nova base', 'info');
+}
+
+function friendlyIGError(msg) {
+    if (!msg) return 'Erro desconhecido na captura.';
+    if (msg.includes('Snapshot criado'))
+        return msg; // mensagem informativa — não é erro real
+    if (msg.includes('Nenhum seguidor novo'))
+        return msg;
+    if (msg.includes('não encontrado ou é privado'))
+        return `${msg}\n\n💡 Verifique se: o perfil existe e é público, ou se sua sessão do Instagram ainda está válida (reconecte se necessário).`;
+    if (msg.includes('Session ID inválido') || msg.includes('expirad') || msg.includes('401') || msg.includes('302'))
+        return 'Sessão do Instagram expirada. Clique em "Conectar IG" e reconecte sua conta.';
+    if (msg.includes('rate') || msg.includes('Please wait') || msg.includes('limit'))
+        return 'Instagram limitou as requisições. Aguarde alguns minutos e tente novamente.';
+    if (msg.includes('checkpoint') || msg.includes('challenge'))
+        return 'Instagram solicitou verificação de segurança. Acesse instagram.com, resolva e reconecte.';
+    return msg;
+}
+
+function analyzeSegment(segment) {
+    if (!segment) return {};
+    const s = segment.toLowerCase();
+    return {
+        needsWebsite:    ['site', 'web', 'loja virtual', 'e-commerce', 'ecommerce', 'landing', 'wordpress',
+                          'desenvolvimento', 'criar site', 'criação de site'].some(k => s.includes(k)),
+        needsMarketing:  ['tráfego', 'trafego', 'ads', 'anúncio', 'anuncio', 'facebook ads', 'google ads',
+                          'meta ads', 'marketing digital', 'gestão de tráfego', 'gestor de trafego'].some(k => s.includes(k)),
+        needsSEO:        ['seo', 'otimização', 'posicionamento', 'ranqueamento', 'orgânico',
+                          'busca orgânica'].some(k => s.includes(k)),
+        needsSocial:     ['redes sociais', 'social media', 'gestão de redes', 'conteúdo', 'feed',
+                          'gerenciamento de instagram', 'smm'].some(k => s.includes(k)),
+        needsDesign:     ['design', 'identidade visual', 'logo', 'branding', 'marca',
+                          'criação de identidade'].some(k => s.includes(k)),
+        needsAccounting: ['contabilidade', 'contábil', 'contador', 'fiscal', 'tributário',
+                          'imposto', 'declaração'].some(k => s.includes(k)),
+        needsLegal:      ['jurídico', 'advocacia', 'direito', 'legal', 'contrato', 'advogado'].some(k => s.includes(k)),
+        rawSegment: segment
+    };
+}
+
+function calculateSegmentBonus(lead, segmentProfile) {
+    if (!segmentProfile || !segmentProfile.rawSegment) return { bonus: 0, reasons: [] };
+
+    const isGmaps = state.activeSource === 'google';
+    const bio     = (lead.bio || '').toLowerCase();
+    let bonus = 0;
+    const reasons = [];
+
+    if (segmentProfile.needsWebsite) {
+        if (isGmaps) {
+            if (!lead.website) { bonus += 35; reasons.push('Sem site — potencial ideal'); }
+            else                bonus -= 15;
+        } else {
+            if (lead.isBusinessAccount && !lead.website) { bonus += 30; reasons.push('Negócio sem presença web'); }
+            else if (!lead.website)                       { bonus += 15; reasons.push('Sem site detectado'); }
+            if (lead.followerCount >= 300 && lead.followerCount <= 80000)
+                { bonus += 10; reasons.push('Porte ideal para prospecção'); }
+        }
+    }
+
+    if (segmentProfile.needsMarketing) {
+        if (lead.isBusinessAccount)              { bonus += 20; reasons.push('Conta empresarial'); }
+        if (!isGmaps && lead.mediaCount > 20)    { bonus += 10; reasons.push('Publica ativamente'); }
+        if (isGmaps && lead.website)             { bonus += 15; reasons.push('Tem produto para anunciar'); }
+        if (isGmaps && lead.rating && lead.reviewCount > 5) { bonus += 10; reasons.push('Negócio ativo'); }
+        if (!isGmaps && !lead.isBusinessAccount &&
+            !bio.match(/loja|produto|serviço|venda|empresa|negócio|marca/))
+            bonus -= 10;
+    }
+
+    if (segmentProfile.needsSEO) {
+        if (isGmaps && lead.website)                          { bonus += 25; reasons.push('Tem site — candidato a SEO'); }
+        if (isGmaps && lead.rating != null && lead.reviewCount < 20)
+                                                               { bonus += 15; reasons.push('Poucas avaliações — SEO local'); }
+        if (!isGmaps && lead.isBusinessAccount)               { bonus += 15; reasons.push('Empresa com presença digital'); }
+    }
+
+    if (segmentProfile.needsSocial) {
+        if (!isGmaps && !lead.isPrivate)                      { bonus += 10; reasons.push('Perfil público'); }
+        if (!isGmaps && lead.followerCount > 100 && lead.followerCount < 20000)
+                                                               { bonus += 15; reasons.push('Porte ideal para gestão'); }
+        if (lead.isBusinessAccount)                            { bonus += 15; reasons.push('Conta empresarial'); }
+        if (!isGmaps && lead.mediaCount < 30 && lead.isBusinessAccount)
+                                                               { bonus += 10; reasons.push('Pouco conteúdo — oportunidade'); }
+    }
+
+    if (segmentProfile.needsDesign) {
+        if (lead.isBusinessAccount) { bonus += 15; reasons.push('Empresa — identidade visual'); }
+        if (isGmaps)                { bonus += 10; reasons.push('Negócio local estabelecido'); }
+    }
+
+    if (segmentProfile.needsAccounting) {
+        if (lead.isBusinessAccount) { bonus += 25; reasons.push('Empresa — demanda contábil'); }
+        if (isGmaps)                { bonus += 20; reasons.push('Negócio físico — cliente potencial'); }
+    }
+
+    if (segmentProfile.needsLegal) {
+        if (lead.isBusinessAccount) { bonus += 25; reasons.push('Empresa — demanda jurídica'); }
+        if (isGmaps)                { bonus += 20; reasons.push('Negócio estabelecido'); }
+    }
+
+    return { bonus: Math.max(0, bonus), reasons: reasons.slice(0, 3) };
+}
+
+function applyAutoRanking(leads) {
+    const seg = state.segmentProfile;
+    leads.forEach(lead => {
+        const base              = lead.score || calculateScore(lead);
+        const { bonus, reasons} = calculateSegmentBonus(lead, seg);
+        lead.score              = Math.min(base + bonus, 100);
+        lead.segmentBonus       = bonus;
+        lead.segmentReasons     = reasons;
+    });
+    leads.sort((a, b) => (b.score || 0) - (a.score || 0));
+    leads.forEach((lead, i) => { lead.isTop10 = i < 10; lead.rank = i + 1; });
+    return leads;
+}
+
+// ============================================
+// AI Analysis (Ollama)
+// ============================================
+let aiModalCurrentLead = null;
+
+function openAIModal(lead) {
+    aiModalCurrentLead = lead;
+    const seg   = state.autoSegment || state.segmentProfile?.rawSegment || '';
+    const model = getAutoAIModel();
+
+    document.getElementById('aiModalLeadName').textContent    = lead.name || lead.fullName || ('@' + lead.username) || 'Lead';
+    document.getElementById('aiModalSegmentInfo').textContent = `Segmento analisado: "${seg}" · Modelo: ${model}`;
+    document.getElementById('aiModalLoading').style.display   = 'block';
+    document.getElementById('aiModalResult').style.display    = 'none';
+    document.getElementById('aiModalError').style.display     = 'none';
+    document.getElementById('aiModalModelName').textContent   = model;
+    document.getElementById('aiModal').classList.add('active');
+
+    fetch('/api/ai/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead, segment: seg, model })
+    })
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('aiModalLoading').style.display = 'none';
+        if (data.success) {
+            document.getElementById('aiModalResult').style.display  = 'block';
+            document.getElementById('aiModalContent').textContent   = data.analysis;
+        } else {
+            document.getElementById('aiModalError').style.display   = 'block';
+            document.getElementById('aiModalError').textContent     = '⚠️ ' + (data.error || 'Erro desconhecido');
+        }
+    })
+    .catch(() => {
+        document.getElementById('aiModalLoading').style.display = 'none';
+        document.getElementById('aiModalError').style.display   = 'block';
+        document.getElementById('aiModalError').textContent     = '⚠️ Erro ao conectar com o servidor.';
+    });
+}
+
+function closeAIModal() {
+    document.getElementById('aiModal').classList.remove('active');
+    aiModalCurrentLead = null;
+}
+
+function getAutoAIModel() {
+    const src = state.activeSource;
+    const igEl    = document.getElementById('autoAIModelIG');
+    const gmapsEl = document.getElementById('autoAIModelGmaps');
+    return (src === 'google' ? gmapsEl : igEl)?.value?.trim() || 'llama3';
+}
+
+function isAutoAIEnabled() {
+    const src = state.activeSource;
+    return src === 'google'
+        ? document.getElementById('autoUseAIGmaps')?.checked
+        : document.getElementById('autoUseAIIG')?.checked;
+}
+
+function toggleAIConfig(source) {
+    const chk = document.getElementById(source === 'gmaps' ? 'autoUseAIGmaps' : 'autoUseAIIG');
+    const cfg = document.getElementById(source === 'gmaps' ? 'autoAIConfigGmaps' : 'autoAIConfigIG');
+    if (cfg) cfg.style.display = chk?.checked ? 'block' : 'none';
 }
 
 // ============================================
@@ -336,6 +620,11 @@ function calculateScore(lead) {
     if (!lead.isPrivate)           s += 5;
     // Ratio seguidor/seguindo
     if (lead.followingCount > 0 && (lead.followerCount / lead.followingCount) < 0.5) s += 5;
+    // Bônus para últimos seguidores: posição 1-10 = mais recente = maior score
+    if (lead.recentFollowerOrder) {
+        const bonus = Math.max(0, 20 - (lead.recentFollowerOrder - 1) * 0.5);
+        s += Math.round(bonus);
+    }
     return Math.min(s, 100);
 }
 
@@ -356,6 +645,12 @@ function isB2B(lead) {
 
 function buildWhyHtml(lead) {
     const pills = [];
+    if (lead.recentFollowerOrder) {
+        const label = lead.recentFollowerOrder <= 10
+            ? `⏱️ ${lead.recentFollowerOrder}º seguidor mais recente`
+            : `⏱️ Seguidor recente #${lead.recentFollowerOrder}`;
+        pills.push(`<span class="why-pill why-recent-follower">${label}</span>`);
+    }
     if (lead.commentCount >= 1) {
         const when = lead.mostRecentComment ? ` (${recencyText(lead.mostRecentComment)})` : '';
         pills.push(`<span class="why-pill why-comment">Comentou ${lead.commentCount}x${when}</span>`);
@@ -381,9 +676,6 @@ function buildWhyHtml(lead) {
 // ============================================
 // Login
 // ============================================
-let loginStep = 1;
-let activeLoginTab = 'cookie';
-
 const IG_KEY = 'up_ig_session';
 
 function saveIgSession(creds)  { localStorage.setItem(IG_KEY, JSON.stringify({ loggedIn: true, ...creds })); }
@@ -437,101 +729,96 @@ function updateLoginUI(loggedIn, user) {
     }
 }
 
+function lgSetState(state) {
+    ['Idle','Waiting','Success','Error'].forEach(s =>
+        document.getElementById(`lgState${s}`)?.style.setProperty('display', s.toLowerCase() === state ? '' : 'none')
+    );
+}
+
 function openLoginModal() {
-    loginStep = 1;
-    activeLoginTab = 'cookie';
+    lgSetState('idle');
     document.getElementById('loginModal').classList.add('active');
-    document.getElementById('tabCookie').style.display   = 'block';
-    document.getElementById('tabPassword').style.display = 'none';
-    document.querySelectorAll('.login-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === 'cookie'));
 }
 
 function closeLoginModal() {
+    cancelBrowserLogin();
     document.getElementById('loginModal').classList.remove('active');
-    document.getElementById('loginError').style.display = 'none';
-    ['igCookieUsername','igSessionId','igCsrfToken','igDsUserId','igUsername','igPassword','igCode'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-    });
-    loginStep = 1;
+    lgSetState('idle');
 }
 
-function switchLoginTab(tab) {
-    activeLoginTab = tab;
-    document.getElementById('tabCookie').style.display   = tab === 'cookie'   ? 'block' : 'none';
-    document.getElementById('tabPassword').style.display = tab === 'password' ? 'block' : 'none';
-    document.querySelectorAll('.login-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-    const btn = document.getElementById('btnConfirmLogin');
-    btn.innerHTML = tab === 'cookie' ? '<i class="fas fa-sign-in-alt"></i> Entrar com Session ID' : '<i class="fas fa-sign-in-alt"></i> Entrar';
-    document.getElementById('loginError').style.display = 'none';
-}
+function resetLoginModal() { lgSetState('idle'); }
 
-async function login() {
-    if (activeLoginTab === 'cookie') { await loginWithCookie(); return; }
-    if (loginStep === 2)             { await submitChallenge(); return; }
+let _lgPollTimer = null;
 
-    const username = document.getElementById('igUsername').value.trim();
-    const password = document.getElementById('igPassword').value;
-    const errorEl  = document.getElementById('loginError');
-    const btn      = document.getElementById('btnConfirmLogin');
-
-    if (!username || !password) { errorEl.textContent = 'Preencha usuário e senha.'; errorEl.style.display = 'block'; return; }
-
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Entrando...';
-    errorEl.style.display = 'none';
+async function startBrowserLogin() {
+    lgSetState('waiting');
+    document.getElementById('lgWaitMsg').textContent = 'Abrindo o Chrome com o Instagram...';
 
     try {
-        const res  = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+        const res  = await fetch('/api/ig-auth/browser-login', { method: 'POST' });
         const data = await res.json();
-        if (data.success) { closeLoginModal(); updateLoginUI(true, data.user); showToast(`Conectado como @${data.user.username}`, 'success'); }
-        else if (data.checkpointRequired) {
-            loginStep = 2;
-            document.getElementById('loginStep1').style.display = 'none';
-            document.getElementById('loginStep2').style.display = 'block';
-            btn.innerHTML = '<i class="fas fa-check"></i> Verificar';
-            showToast('Código enviado! Verifique seu email ou SMS.', 'info');
-        } else { errorEl.textContent = data.error || 'Falha no login.'; errorEl.style.display = 'block'; }
-    } catch { errorEl.textContent = 'Erro de conexão.'; errorEl.style.display = 'block'; }
-    finally { btn.disabled = false; if (loginStep === 1) btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Entrar'; }
+        if (!data.success) {
+            document.getElementById('lgErrorMsg').textContent = data.error || 'Erro ao abrir o navegador.';
+            lgSetState('error');
+            return;
+        }
+        document.getElementById('lgWaitMsg').textContent = 'Chrome aberto — faça login no Instagram';
+
+        _lgPollTimer = setInterval(async () => {
+            try {
+                const r    = await fetch('/api/ig-auth/browser-status');
+                const info = await r.json();
+
+                if (info.status === 'done' && info.data) {
+                    clearInterval(_lgPollTimer); _lgPollTimer = null;
+                    const d = info.data;
+                    try {
+                        const lr = await fetch('/api/login-cookie', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                sessionid:    d.sessionid,
+                                csrftoken:    d.csrftoken,
+                                dsUserId:     d.dsUserId,
+                                username:     d.username,
+                                cookieString: d.cookieString || '',
+                                userAgent:    d.userAgent   || '',
+                            })
+                        });
+                        const ld = await lr.json();
+                        const user = ld.success ? ld.user : { username: d.username };
+                        saveIgSession({ username: user.username || d.username, sessionid: d.sessionid, csrftoken: d.csrftoken, dsUserId: d.dsUserId, cookieString: d.cookieString || '', userAgent: d.userAgent || '' });
+                        updateLoginUI(true, user);
+                        document.getElementById('lgSuccessUser').textContent = `@${user.username || d.username}`;
+                        lgSetState('success');
+                        showToast(`Conectado como @${user.username || d.username}!`, 'success');
+                        // wizard mobile: avança step se necessário
+                        mwRefreshLoginStep?.();
+                        setTimeout(() => { if (mwState?.currentStep === 'ig_login') mwGoToStep?.('ig_ready'); }, 600);
+                    } catch {
+                        saveIgSession({ username: d.username, sessionid: d.sessionid, csrftoken: d.csrftoken, dsUserId: d.dsUserId, cookieString: d.cookieString || '', userAgent: d.userAgent || '' });
+                        updateLoginUI(true, { username: d.username });
+                        document.getElementById('lgSuccessUser').textContent = `@${d.username}`;
+                        lgSetState('success');
+                        showToast('Instagram conectado!', 'success');
+                    }
+                } else if (['timeout','error','cancelled'].includes(info.status)) {
+                    clearInterval(_lgPollTimer); _lgPollTimer = null;
+                    if (info.status === 'cancelled') { lgSetState('idle'); return; }
+                    document.getElementById('lgErrorMsg').textContent = 'Login encerrado ou expirou. Tente novamente.';
+                    lgSetState('error');
+                }
+            } catch {}
+        }, 1500);
+
+    } catch {
+        document.getElementById('lgErrorMsg').textContent = 'Servidor indisponível. Verifique se o servidor está rodando.';
+        lgSetState('error');
+    }
 }
 
-async function loginWithCookie() {
-    const sessionid = document.getElementById('igSessionId').value.trim();
-    const username  = document.getElementById('igCookieUsername').value.trim();
-    const csrftoken = document.getElementById('igCsrfToken').value.trim();
-    const dsUserId  = document.getElementById('igDsUserId').value.trim();
-    const errorEl   = document.getElementById('loginError');
-    const btn       = document.getElementById('btnConfirmLogin');
-
-    if (!username || !sessionid) { errorEl.textContent = 'Usuário e Session ID obrigatórios.'; errorEl.style.display = 'block'; return; }
-
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando...';
-    errorEl.style.display = 'none';
-
-    try {
-        const res  = await fetch('/api/login-cookie', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionid, username, csrftoken, dsUserId }) });
-        const data = await res.json();
-        if (data.success) { saveIgSession({ username, sessionid, csrftoken, dsUserId }); closeLoginModal(); updateLoginUI(true, data.user); showToast(`Conectado como @${data.user.username}`, 'success'); }
-        else { errorEl.textContent = data.error || 'Falha.'; errorEl.style.display = 'block'; }
-    } catch { errorEl.textContent = 'Erro de conexão.'; errorEl.style.display = 'block'; }
-    finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Entrar com Session ID'; }
-}
-
-async function submitChallenge() {
-    const code    = document.getElementById('igCode').value.trim();
-    const errorEl = document.getElementById('loginError');
-    const btn     = document.getElementById('btnConfirmLogin');
-    if (!code) { errorEl.textContent = 'Digite o código.'; errorEl.style.display = 'block'; return; }
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando...';
-    try {
-        const res  = await fetch('/api/challenge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
-        const data = await res.json();
-        if (data.success) { closeLoginModal(); updateLoginUI(true, data.user); showToast(`Conectado como @${data.user.username}`, 'success'); }
-        else { errorEl.textContent = data.error || 'Código inválido.'; errorEl.style.display = 'block'; btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Verificar'; }
-    } catch { errorEl.textContent = 'Erro de conexão.'; errorEl.style.display = 'block'; btn.disabled = false; }
+async function cancelBrowserLogin() {
+    if (_lgPollTimer) { clearInterval(_lgPollTimer); _lgPollTimer = null; }
+    try { await fetch('/api/ig-auth/browser-cancel', { method: 'POST' }); } catch {}
 }
 
 async function logout() {
@@ -572,16 +859,110 @@ document.querySelectorAll('input[name="captureType"]').forEach(radio => {
 async function startCapture() {
     if (state.activeSource === 'google') { startCaptureGoogle(); return; }
 
-    // Créditos primeiro — sem créditos abre compra imediatamente
-    if (getCreditsIG() <= 0) {
-        openBuyModal();
-        return;
-    }
-
-    // Depois verifica login do Instagram
+    // Verifica login do Instagram (obrigatório sempre)
     const igSession = loadIgSession();
     if (!igSession?.loggedIn) {
         openLoginModal();
+        return;
+    }
+
+    hideFreeTrialBanner();
+
+    // Modo automático: lê dos campos auto e configura internamente
+    if (state.flowMode === 'auto') {
+        const autoTarget  = document.getElementById('autoIGTarget')?.value?.trim() || '';
+        const autoSegment = document.getElementById('autoSegmentIG')?.value?.trim() || '';
+        const autoPosts   = document.getElementById('autoIGPosts')?.value || '10';
+
+        if (!autoTarget)  { showToast('Informe o perfil do concorrente', 'error'); return; }
+        if (!autoSegment) { showToast('Informe seu segmento/serviço — é obrigatório para o ranking', 'error'); return; }
+
+        state.autoSegment   = autoSegment;
+        state.segmentProfile = analyzeSegment(autoSegment);
+        state.autoCollecting = true;
+
+        state.isCapturing       = true;
+        state.startTime         = new Date();
+        state.pendingLeads      = [];
+        state.duplicatesSkipped = 0;
+        updateCaptureUI(true);
+        document.getElementById('progressContainer').style.display = 'block';
+        setCaptureStatus('Coletando leads para ranking...', true);
+        startTimer();
+        updateDupBadge();
+
+        const autoQty = 200;
+        const params  = new URLSearchParams({
+            type: 'profile_analysis', target: autoTarget,
+            quantity: autoQty, fetchBio: 'true', posts: autoPosts
+        });
+        const es = new EventSource(`/api/capture?${params}`);
+        state.eventSource = es;
+        // Flag para evitar reconexão automática do EventSource processar o evento duplicado
+        let autoFinished = false;
+
+        const autoClose = () => {
+            if (autoFinished) return;
+            autoFinished = true;
+            es.close();
+            state.eventSource    = null;
+            state.autoCollecting = false;
+        };
+
+        es.onmessage = e => {
+            if (autoFinished) return;
+            const data = JSON.parse(e.data);
+            if (data.type === 'lead') {
+                if (state.pendingLeads.some(l => l.id === data.lead.id)) return;
+                if (state.leads.some(l => l.id === data.lead.id)) return;
+                if (isLeadInHistory(data.lead.id)) data.lead.isDuplicate = true;
+
+                data.lead.score = calculateScore(data.lead);
+                state.pendingLeads.push(data.lead);
+                updateProgress(state.pendingLeads.length, autoQty);
+            } else if (data.type === 'log') {
+                document.getElementById('progressText').textContent = data.message;
+                const msg = data.message;
+                if      (msg.includes('Fase 1/3')) setProgress(15, msg);
+                else if (msg.includes('Fase 2/3')) setProgress(45, msg);
+                else if (msg.includes('Fase 3/3')) {
+                    const m = msg.match(/Post (\d+)\/(\d+)/);
+                    if (m) setProgress(50 + Math.round((parseInt(m[1]) / parseInt(m[2])) * 40), msg);
+                    else   setProgress(50, msg);
+                }
+            } else if (data.type === 'done' || data.type === 'error') {
+                autoClose();
+
+                if (data.type === 'error') {
+                    const friendlyMsg = friendlyIGError(data.message);
+                    finishCapture(friendlyMsg, 'error');
+                    return;
+                }
+                if (state.pendingLeads.length === 0) {
+                    finishCapture('Nenhum lead encontrado', 'warning');
+                    return;
+                }
+                setProgress(98, 'Aplicando ranking por segmento...');
+                applyAutoRanking(state.pendingLeads);
+                state.pendingLeads = state.pendingLeads.slice(0, 50);
+                setProgress(100, `${state.pendingLeads.length} melhores leads selecionados`);
+                openLeadPreviewModal();
+            }
+        };
+
+        es.onerror = () => {
+            if (autoFinished) return;
+            autoClose();
+            if (state.isCapturing) {
+                if (state.pendingLeads.length > 0) {
+                    applyAutoRanking(state.pendingLeads);
+                    state.pendingLeads = state.pendingLeads.slice(0, 50);
+                    openLeadPreviewModal();
+                } else {
+                    finishCapture('Conexão interrompida. Verifique sua conexão com o Instagram.', 'error');
+                }
+            }
+        };
         return;
     }
 
@@ -626,30 +1007,45 @@ async function startCapture() {
     if (profileTarget) params.set('profileTarget', profileTarget);
     const es = new EventSource(`/api/capture?${params}`);
     state.eventSource = es;
+    let advDone = false;
 
     es.onmessage = e => {
+        if (advDone) return;
         const data = JSON.parse(e.data);
         if (data.type === 'lead') {
             // Dedup: mesmo lead na sessão atual
             if (state.leads.some(l => l.id === data.lead.id)) return;
             if (state.pendingLeads.some(l => l.id === data.lead.id)) return;
 
-            // Dedup cross-session: lead já extraído antes
-            if (isLeadInHistory(data.lead.id)) {
-                state.duplicatesSkipped++;
-                updateDupBadge();
-                return;
-            }
+            // Duplicata cross-session: marca mas não ignora — aparece sem custo de crédito
+            if (isLeadInHistory(data.lead.id)) data.lead.isDuplicate = true;
 
             data.lead.score = calculateScore(data.lead);
             state.pendingLeads.push(data.lead);
             updateProgress(state.leads.length + state.pendingLeads.length, quantity);
 
-            // Parar quando atingir o limite de créditos disponíveis
-            if (state.pendingLeads.length >= getCreditsIG()) {
+            const trial    = isFreeTrial();
+            const avail    = getCreditsIG();
+            const newCount = state.pendingLeads.filter(l => !l.isDuplicate).length;
+            const limit    = trial ? FREE_TRIAL_LEADS : avail;
+
+            if (newCount > 0 && avail <= 0 && !trial) {
+                advDone = true;
                 es.close(); state.eventSource = null;
-                setProgress(95, `${state.pendingLeads.length} leads prontos para revisar`);
-                openLeadPreviewModal();
+                finishCapture('Você não tem créditos. Adquira créditos para capturar leads.', 'warning');
+                setTimeout(() => openBuyModal(), 600);
+                return;
+            }
+
+            if (newCount >= limit) {
+                advDone = true;
+                es.close(); state.eventSource = null;
+                if (trial) {
+                    commitFreeTrialLeads();
+                } else {
+                    setProgress(95, `${state.pendingLeads.length} leads prontos para revisar`);
+                    openLeadPreviewModal();
+                }
             }
         } else if (data.type === 'log') {
             document.getElementById('progressText').textContent = data.message;
@@ -664,6 +1060,7 @@ async function startCapture() {
             else if (msg.includes('Calculando')) setProgress(92, msg);
             else if (msg.includes('Enviando'))   setProgress(97, msg);
         } else if (data.type === 'done') {
+            advDone = true;
             es.close(); state.eventSource = null;
             setProgress(100, `${state.pendingLeads.length} novos leads prontos`);
             if (state.pendingLeads.length === 0) {
@@ -673,28 +1070,38 @@ async function startCapture() {
                         : 'Nenhum lead encontrado',
                     'warning'
                 );
+            } else if (isFreeTrial()) {
+                commitFreeTrialLeads();
             } else {
                 openLeadPreviewModal();
             }
         } else if (data.type === 'error') {
+            advDone = true;
             es.close(); state.eventSource = null;
-            if (data.message?.includes('Créditos')) openBuyModal();
-            finishCapture(data.message, 'error');
+            const isInfo = data.message?.includes('Snapshot criado') || data.message?.includes('Nenhum seguidor novo');
+            if (isInfo) { finishCapture(friendlyIGError(data.message), 'warning'); return; }
+            finishCapture(friendlyIGError(data.message), 'error');
         }
     };
 
     es.onerror = () => {
+        if (advDone) return;
+        advDone = true;
         es.close();
         const wasCapturing = state.isCapturing;
         state.eventSource = null;
-        if (wasCapturing) finishCapture('Conexão interrompida', 'error');
+        if (wasCapturing) finishCapture('Conexão interrompida com o Instagram. Verifique sua sessão.', 'error');
     };
 }
 
 function stopCapture() {
     if (state.eventSource) { state.eventSource.close(); state.eventSource = null; }
-    // Se havia leads em buffer, abre preview; senão apenas cancela
+    state.autoCollecting = false;
     if (state.pendingLeads.length > 0) {
+        if (state.flowMode === 'auto' && state.activeSource !== 'google') {
+            applyAutoRanking(state.pendingLeads);
+            state.pendingLeads = state.pendingLeads.slice(0, 50);
+        }
         setProgress(95, `${state.pendingLeads.length} leads prontos para revisar`);
         openLeadPreviewModal();
     } else {
@@ -716,21 +1123,29 @@ function openLeadPreviewModal() {
     if (costEl) costEl.textContent = cost;
 
     let meta = `<strong>${total}</strong> lead${total !== 1 ? 's' : ''} novo${total !== 1 ? 's' : ''} encontrado${total !== 1 ? 's' : ''}`;
+    if (state.flowMode === 'auto' && state.autoSegment) {
+        meta += ` &nbsp;&bull;&nbsp; <span style="color:var(--primary);font-size:.8rem"><i class="fas fa-magic"></i> Rankeados por: <strong>${state.autoSegment}</strong></span>`;
+    }
     if (dupCnt > 0) {
         meta += ` &nbsp;&bull;&nbsp; <span class="dup-info">${dupCnt} duplicado${dupCnt > 1 ? 's' : ''} de capturas anteriores foram ignorados automaticamente</span>`;
     }
 
-    const sorted = [...pending].sort((a, b) => (b.score || 0) - (a.score || 0));
+    const isRecentFollowers = pending.length > 0 && pending[0].recentFollowerOrder != null;
+    const sorted = isRecentFollowers
+        ? [...pending].sort((a, b) => (a.recentFollowerOrder || 0) - (b.recentFollowerOrder || 0))
+        : [...pending].sort((a, b) => (b.score || 0) - (a.score || 0));
     let rows = '';
     sorted.forEach(lead => {
-        const score = lead.score || 0;
-        const { label: slabel, cls } = scoreLabel(score);
         const wa = lead.whatsapp ? '<i class="fab fa-whatsapp" title="Tem WhatsApp" style="color:#25D366;font-size:1rem"></i>' : '';
         const em = lead.email    ? '<i class="fas fa-envelope" title="Tem email" style="color:var(--primary);font-size:.85rem"></i>' : '';
         const contacts = (wa || em) ? wa + em : '<small style="color:var(--gray)">—</small>';
-        rows += `<tr>
-            <td class="prev-user">${maskUsername(lead.username)}</td>
-            <td><span class="score-badge ${cls}" style="font-size:.7rem;padding:.18rem .45rem">${slabel} ${score}pts</span></td>
+        const prevTop = lead.isTop10 ? `<span class="top10-badge" style="font-size:.55rem">🏆 TOP ${lead.rank}</span> ` : '';
+        const scoreBadge = isRecentFollowers
+            ? `<span style="font-size:.7rem;color:var(--gray)">#${lead.recentFollowerOrder || '—'}</span>`
+            : (() => { const score = lead.score || 0; const { label: slabel, cls } = scoreLabel(score); return `<span class="score-badge ${cls}" style="font-size:.7rem;padding:.18rem .45rem">${slabel} ${score}pts</span>`; })();
+        rows += `<tr${lead.isTop10 ? ' style="background:rgba(243,156,18,.08)"' : ''}>
+            <td class="prev-user">${prevTop}${maskUsername(lead.username)}</td>
+            <td>${scoreBadge}</td>
             <td class="prev-contacts">${contacts}</td>
         </tr>`;
     });
@@ -756,14 +1171,22 @@ function closeLeadPreviewModal() {
 
 function approveLeadPreview() {
     const avail    = getCreditsIG();
-    const toAdd    = state.pendingLeads.slice(0, avail);
-    const leftOver = state.pendingLeads.length - toAdd.length;
+    const newLeads = state.pendingLeads.filter(l => !l.isDuplicate);
+    const dupLeads = state.pendingLeads.filter(l =>  l.isDuplicate);
 
-    toAdd.forEach(lead => {
+    // Limita leads novos pelos créditos disponíveis
+    const toAddNew = newLeads.slice(0, avail);
+    const leftOver = newLeads.length - toAddNew.length;
+
+    // Leads novos: desconta crédito e registra no histórico
+    toAddNew.forEach(lead => {
         deductCredit();
         addLeadToHistory(lead);
         state.leads.push(lead);
     });
+
+    // Duplicatas: aparecem na lista sem custo, sem re-registrar no histórico
+    dupLeads.forEach(lead => state.leads.push(lead));
 
     state.pendingLeads      = [];
     state.duplicatesSkipped = 0;
@@ -774,8 +1197,10 @@ function approveLeadPreview() {
     updateCounts();
     updateHistoryInfo();
 
-    let msg = `${toAdd.length} lead${toAdd.length !== 1 ? 's' : ''} adicionado${toAdd.length !== 1 ? 's' : ''} com sucesso`;
-    if (leftOver > 0) msg += ` (${leftOver} descartado${leftOver !== 1 ? 's' : ''} por limite de créditos)`;
+    const total = toAddNew.length + dupLeads.length;
+    let msg = `${total} lead${total !== 1 ? 's' : ''} adicionado${total !== 1 ? 's' : ''} com sucesso`;
+    if (dupLeads.length > 0) msg += ` (${dupLeads.length} já capturado${dupLeads.length !== 1 ? 's' : ''}, sem custo)`;
+    if (leftOver > 0) msg += ` (${leftOver} descartado${leftOver !== 1 ? 's' : ''} por falta de créditos)`;
     finishCapture(msg, 'success');
     updateCreditsUI();
     if (getCreditsIG() <= 0) setTimeout(() => openBuyModal(), 800);
@@ -798,25 +1223,43 @@ function rejectLeadPreview() {
 // Captura Google Maps
 // ============================================
 function startCaptureGoogle() {
-    if (getCreditsGoogle() <= 0) { openBuyModal(); return; }
+    hideFreeTrialBanner();
 
-    const kw   = document.getElementById('gmapsKeyword')?.value?.trim() || '';
-    const city = document.getElementById('gmapsCity')?.value?.trim()    || '';
-    if (!kw) { showToast('Informe a palavra-chave de busca', 'error'); return; }
+    // Modo automático: lê campos do sidebar auto
+    let kw, city, onlyPhone, onlyWhatsapp, onlyNoWebsite, minRating, maxRating;
 
-    const keyword       = city ? `${kw} em ${city}` : kw;
-    const quantity      = 50;
-    const onlyPhone     = document.getElementById('gmapsOnlyPhone')?.checked     || false;
-    const onlyWhatsapp  = document.getElementById('gmapsOnlyWhatsapp')?.checked  || false;
-    const onlyNoWebsite = document.getElementById('gmapsOnlyNoWebsite')?.checked || false;
-    const minRating     = document.getElementById('gmapsMinRating')?.value        || '';
-    const maxRating     = document.getElementById('gmapsMaxRating')?.value        || '';
+    if (state.flowMode === 'auto') {
+        kw   = document.getElementById('autoGmapsTerm')?.value?.trim() || '';
+        city = document.getElementById('autoGmapsCity')?.value?.trim() || '';
+        const seg = document.getElementById('autoSegmentGmaps')?.value?.trim() || '';
+
+        if (!kw)  { showToast('Informe a palavra-chave de busca', 'error'); return; }
+        if (!seg) { showToast('Informe seu segmento/serviço — é obrigatório para o ranking', 'error'); return; }
+
+        state.autoSegment    = seg;
+        state.segmentProfile = analyzeSegment(seg);
+        onlyPhone = onlyWhatsapp = onlyNoWebsite = false;
+        minRating = maxRating = '';
+    } else {
+        kw           = document.getElementById('gmapsKeyword')?.value?.trim() || '';
+        city         = document.getElementById('gmapsCity')?.value?.trim()    || '';
+        if (!kw) { showToast('Informe a palavra-chave de busca', 'error'); return; }
+        onlyPhone     = document.getElementById('gmapsOnlyPhone')?.checked     || false;
+        onlyWhatsapp  = document.getElementById('gmapsOnlyWhatsapp')?.checked  || false;
+        onlyNoWebsite = document.getElementById('gmapsOnlyNoWebsite')?.checked || false;
+        minRating     = document.getElementById('gmapsMinRating')?.value        || '';
+        maxRating     = document.getElementById('gmapsMaxRating')?.value        || '';
+    }
+
+    const keyword  = city ? `${kw} em ${city}` : kw;
+    const quantity = 50;
 
     state.isCapturing = true;
     state.startTime   = new Date();
+    if (state.flowMode === 'auto') state.leads = [];
     updateCaptureUI(true);
     document.getElementById('progressContainer').style.display = 'block';
-    setCaptureStatus('Buscando no Google Maps...', true);
+    setCaptureStatus(state.flowMode === 'auto' ? 'Buscando leads para ranking...' : 'Buscando no Google Maps...', true);
     startTimer();
 
     const params = new URLSearchParams({ keyword, quantity });
@@ -828,6 +1271,9 @@ function startCaptureGoogle() {
     const es = new EventSource(`/api/gmaps/search?${params}`);
     state.eventSource = es;
 
+    // buffer para modo auto (rank depois do done)
+    const gmapsBuffer = [];
+
     es.onmessage = e => {
         const data = JSON.parse(e.data);
         if (data.type === 'lead') {
@@ -835,27 +1281,83 @@ function startCaptureGoogle() {
             if (state.leads.some(l => l.id === lead.id)) return;
             if (isLeadInHistory(lead.id)) { state.duplicatesSkipped++; updateDupBadge(); return; }
 
-            const remaining = getCreditsGoogle() - 1;
-            setCreditsGoogle(remaining);
-            addLeadToHistory(lead);
+            const trialGoogle = isFreeTrial();
 
-            state.leads.push(lead);
-            updateProgress(state.leads.length, quantity);
-            try { renderRowGoogle(lead); } catch(err) { console.error(err); }
-            updateCounts();
-
-            if (remaining <= 0) {
-                es.close(); state.eventSource = null;
-                finishCapture(`${state.leads.length} leads capturados — créditos esgotados`, 'warning');
-                setTimeout(() => openBuyModal(), 800);
+            if (state.flowMode === 'auto') {
+                gmapsBuffer.push(lead);
+                updateProgress(gmapsBuffer.length, quantity);
+                document.getElementById('progressText').textContent = `Coletando empresa ${gmapsBuffer.length}...`;
+                if (trialGoogle && gmapsBuffer.length >= FREE_TRIAL_LEADS) {
+                    es.close(); state.eventSource = null;
+                    gmapsBuffer.slice(0, FREE_TRIAL_LEADS).forEach(l => { addLeadToHistory(l); state.leads.push(l); });
+                    renderAllLeads(); updateCounts();
+                    finishCapture(`${FREE_TRIAL_LEADS} leads gratuitos — compre créditos para ver os 50 melhores`, 'success', true);
+                    showFreeTrialBanner();
+                }
+            } else {
+                if (trialGoogle) {
+                    addLeadToHistory(lead);
+                    state.leads.push(lead);
+                    updateProgress(state.leads.length, quantity);
+                    try { renderRowGoogle(lead); } catch(err) { console.error(err); }
+                    updateCounts();
+                    if (state.leads.length >= FREE_TRIAL_LEADS) {
+                        es.close(); state.eventSource = null;
+                        finishCapture(`${FREE_TRIAL_LEADS} leads gratuitos — compre créditos para ver os 50 melhores`, 'success', true);
+                        showFreeTrialBanner();
+                    }
+                } else {
+                    const remaining = getCreditsGoogle() - 1;
+                    setCreditsGoogle(remaining);
+                    addLeadToHistory(lead);
+                    state.leads.push(lead);
+                    updateProgress(state.leads.length, quantity);
+                    try { renderRowGoogle(lead); } catch(err) { console.error(err); }
+                    updateCounts();
+                    if (remaining <= 0) {
+                        es.close(); state.eventSource = null;
+                        finishCapture(`${state.leads.length} leads capturados — créditos esgotados`, 'warning');
+                        setTimeout(() => openBuyModal(), 800);
+                    }
+                }
             }
         } else if (data.type === 'log') {
             document.getElementById('progressText').textContent = data.message;
         } else if (data.type === 'done') {
             es.close(); state.eventSource = null;
-            setProgress(100, `${state.leads.length} empresas encontradas`);
-            finishCapture(`Concluído — ${state.leads.length} leads Google Maps encontrados`, 'success');
-            updateCreditsUI();
+            if (state.flowMode === 'auto') {
+                setProgress(95, 'Aplicando ranking por segmento...');
+                applyAutoRanking(gmapsBuffer);
+                const creds = getCreditsGoogle();
+                const maxTake = isFreeTrial() ? FREE_TRIAL_LEADS : Math.min(50, creds);
+                const top = gmapsBuffer.slice(0, maxTake);
+                const toAdd = isFreeTrial() ? top : top.slice(0, creds);
+                toAdd.forEach(lead => {
+                    if (!isFreeTrial()) setCreditsGoogle(getCreditsGoogle() - 1);
+                    addLeadToHistory(lead);
+                    state.leads.push(lead);
+                });
+                setProgress(100, `${state.leads.length} leads selecionados`);
+                renderAllLeads();
+                updateCounts();
+                if (isFreeTrial()) {
+                    finishCapture(`${state.leads.length} leads gratuitos — compre créditos para ver os 50 melhores`, 'success', true);
+                    showFreeTrialBanner();
+                } else {
+                    finishCapture(`${state.leads.length} leads Google Maps rankeados por segmento`, 'success');
+                    updateCreditsUI();
+                    if (getCreditsGoogle() <= 0) setTimeout(() => openBuyModal(), 800);
+                }
+            } else {
+                setProgress(100, `${state.leads.length} empresas encontradas`);
+                if (isFreeTrial()) {
+                    finishCapture(`${state.leads.length} leads gratuitos — compre créditos para ver os 50 melhores`, 'success', true);
+                    showFreeTrialBanner();
+                } else {
+                    finishCapture(`Concluído — ${state.leads.length} leads Google Maps encontrados`, 'success');
+                    updateCreditsUI();
+                }
+            }
         } else if (data.type === 'error') {
             es.close(); state.eventSource = null;
             finishCapture(data.message, 'error');
@@ -866,7 +1368,17 @@ function startCaptureGoogle() {
         es.close();
         const wasCapturing = state.isCapturing;
         state.eventSource = null;
-        if (wasCapturing) finishCapture('Conexão interrompida', 'error');
+        if (wasCapturing) {
+            if (state.flowMode === 'auto' && gmapsBuffer.length > 0) {
+                applyAutoRanking(gmapsBuffer);
+                const top = gmapsBuffer.slice(0, Math.min(50, getCreditsGoogle()));
+                top.forEach(lead => { setCreditsGoogle(getCreditsGoogle() - 1); addLeadToHistory(lead); state.leads.push(lead); });
+                renderAllLeads(); updateCounts();
+                finishCapture(`${state.leads.length} leads capturados`, 'warning');
+            } else {
+                finishCapture('Conexão interrompida', 'error');
+            }
+        }
     };
 }
 
@@ -875,6 +1387,7 @@ function renderRowGoogle(lead) {
     document.getElementById('emptyRow')?.remove();
 
     const row = document.createElement('tr');
+    if (lead.isTop10) row.classList.add('top10-row');
     row.dataset.id          = lead.id;
     row.dataset.has_email   = '0';
     row.dataset.has_whatsapp = lead.whatsapp ? '1' : '0';
@@ -903,17 +1416,24 @@ function renderRowGoogle(lead) {
         ? `⭐ ${lead.rating.toFixed(1)}${lead.reviewCount ? ` <small style="color:var(--gray)">(${lead.reviewCount.toLocaleString('pt-BR')})</small>` : ''}`
         : '-';
 
+    const segReasonHtml = buildSegmentReasons(lead);
+    const top10Html     = buildTop10Badge(lead);
+    const aiHtml        = (lead.isTop10 && state.flowMode === 'auto' && isAutoAIEnabled())
+        ? `<button class="action-btn ai-btn" title="Analisar com IA" onclick="openAIModal(state.leads.find(l=>l.id==='${lead.id}'))" style="margin-right:.25rem"><i class="fas fa-robot"></i></button>` : '';
+
     row.innerHTML = `
         <td><input type="checkbox" class="row-checkbox" data-id="${lead.id}"></td>
         <td style="max-width:160px">
+            ${top10Html}
             <strong style="font-size:.85rem">${lead.name}</strong>
             ${lead.category ? `<br><small style="color:var(--gray);font-size:.72rem">${lead.category}</small>` : ''}
+            ${segReasonHtml ? `<div style="margin-top:3px">${segReasonHtml}</div>` : ''}
         </td>
         <td style="font-size:.82rem">${contactHtml}</td>
         <td style="font-size:.78rem">${websiteHtml}</td>
         <td style="font-size:.82rem;white-space:nowrap">${ratingHtml}</td>
         <td style="font-size:.78rem;max-width:150px;color:rgba(255,255,255,.75)">${lead.address || '-'}</td>
-        <td><button class="action-btn delete" onclick="deleteLead('${lead.id}')" title="Excluir"><i class="fas fa-trash"></i></button></td>
+        <td>${aiHtml}<button class="action-btn delete" onclick="deleteLead('${lead.id}')" title="Excluir"><i class="fas fa-trash"></i></button></td>
     `;
     tbody.appendChild(row);
 }
@@ -928,7 +1448,7 @@ function formatPhone(raw) {
     return raw;
 }
 
-function finishCapture(msg, type) {
+function finishCapture(msg, type, noAutoExport = false) {
     state.isCapturing = false;
     stopTimer();
     updateCaptureUI(false);
@@ -936,8 +1456,8 @@ function finishCapture(msg, type) {
     const _exp = document.getElementById('btnExportar'); if (_exp) _exp.disabled = state.leads.length === 0;
     document.getElementById('btnExportarPDF').disabled = state.leads.length === 0;
     showToast(msg, type);
-    // Auto-download do PDF sempre que houver leads — evita perda ao recarregar a página
-    if (state.leads.length > 0 && type !== 'error') {
+    // Auto-download do PDF — não gera no free trial
+    if (state.leads.length > 0 && type !== 'error' && !noAutoExport && !isFreeTrial()) {
         setTimeout(function () {
             showToast('📄 Salvando PDF automaticamente...', 'info', 6000);
             setTimeout(exportToPDF, 600);
@@ -970,6 +1490,27 @@ function startTimer() {
 function stopTimer() { if (state.timerInterval) { clearInterval(state.timerInterval); state.timerInterval = null; } }
 
 // ============================================
+// Rendering helpers
+// ============================================
+function buildTop10Badge(lead) {
+    if (!lead.isTop10) return '';
+    return `<span class="top10-badge" title="Top ${lead.rank || '?'} no ranking do segmento">🏆 TOP ${lead.rank || '?'}</span>`;
+}
+
+function buildSegmentReasons(lead) {
+    if (!lead.segmentReasons?.length) return '';
+    return lead.segmentReasons.map(r =>
+        `<span class="why-pill why-segment">${r}</span>`
+    ).join('');
+}
+
+function buildAutoActionsHtml(lead) {
+    if (state.flowMode !== 'auto' || !lead.isTop10 || !isAutoAIEnabled()) return '';
+    const safeId = JSON.stringify(lead.id);
+    return `<button class="action-btn ai-btn" title="Analisar com IA" onclick="openAIModal(state.leads.find(l=>l.id===${safeId}))" style="margin-right:.25rem"><i class="fas fa-robot"></i></button>`;
+}
+
+// ============================================
 // Rendering
 // ============================================
 function renderRow(lead, prepend = false) {
@@ -978,8 +1519,9 @@ function renderRow(lead, prepend = false) {
     const tbody = document.getElementById('resultsBody');
     document.getElementById('emptyRow')?.remove();
 
-    const score = lead.score ?? calculateScore(lead);
-    const { label: slabel, cls } = scoreLabel(score);
+    const isRecent = lead.recentFollowerOrder != null;
+    const score = isRecent ? 0 : (lead.score ?? calculateScore(lead));
+    const { label: slabel, cls } = isRecent ? { label: `#${lead.recentFollowerOrder}`, cls: 'score-neutral' } : scoreLabel(score);
 
     const photoHtml = lead.photoUrl
         ? `<img src="${lead.photoUrl}" class="user-photo" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
@@ -987,8 +1529,9 @@ function renderRow(lead, prepend = false) {
         : `<div class="user-photo-placeholder">${(lead.fullName || lead.username).charAt(0).toUpperCase()}</div>`;
 
     const row = document.createElement('tr');
+    if (lead.isTop10) row.classList.add('top10-row');
     row.dataset.id           = lead.id;
-    row.dataset.scoreVal     = score;
+    row.dataset.scoreVal     = isRecent ? lead.recentFollowerOrder : score;
     row.dataset.score        = cls;
     row.dataset.has_whatsapp = lead.whatsapp ? '1' : '0';
     row.dataset.has_email    = lead.email    ? '1' : '0';
@@ -996,16 +1539,17 @@ function renderRow(lead, prepend = false) {
     row.dataset.username     = (lead.username || '').toLowerCase();
     row.dataset.fullname     = (lead.fullName  || '').toLowerCase();
 
+    const whyExtra = buildTop10Badge(lead) + buildSegmentReasons(lead);
     row.innerHTML = `
         <td><input type="checkbox" class="row-checkbox" data-id="${lead.id}"></td>
         <td>${photoHtml}</td>
         <td><a href="https://instagram.com/${lead.username}" target="_blank" class="ig-link">@${lead.username}</a>${lead.isPrivate ? ' <i class="fas fa-lock" style="color:var(--gray);font-size:.7rem"></i>' : ''}<br><small style="color:var(--gray)">${lead.fullName || ''}</small></td>
-        <td><span class="score-badge ${cls}">${slabel}<br><small>${score}pts</small></span></td>
-        <td class="why-cell">${buildWhyHtml(lead)}</td>
+        <td>${isRecent ? `<span style="color:var(--gray);font-size:.85rem">${slabel}</span>` : `<span class="score-badge ${cls}">${slabel}<br><small>${score}pts</small></span>`}</td>
+        <td class="why-cell">${isRecent ? '' : whyExtra + buildWhyHtml(lead)}</td>
         <td class="whatsapp-value">${lead.whatsapp ? `<a href="https://wa.me/${lead.whatsapp.replace(/\D/g,'')}" target="_blank" class="contact-link wa-link"><i class="fab fa-whatsapp"></i> ${lead.whatsapp}</a>` : '-'}</td>
         <td class="email-value">${lead.email ? `<a href="mailto:${lead.email}" class="contact-link mail-link"><i class="fas fa-envelope"></i> ${lead.email}</a>` : '-'}</td>
         <td class="bio-text" title="${lead.bio || ''}">${lead.bio ? lead.bio.slice(0, 60) + (lead.bio.length > 60 ? '...' : '') : '-'}</td>
-        <td><button class="action-btn delete" onclick="deleteLead('${lead.id}')" title="Excluir"><i class="fas fa-trash"></i></button></td>
+        <td>${buildAutoActionsHtml(lead)}<button class="action-btn delete" onclick="deleteLead('${lead.id}')" title="Excluir"><i class="fas fa-trash"></i></button></td>
     `;
 
     // Inserir em ordem de score
@@ -1019,10 +1563,14 @@ function renderAllLeads() {
     const tbody = document.getElementById('resultsBody');
     tbody.innerHTML = '';
 
-    // Ordenar por score antes de renderizar
+    // Ordenar: recentes por posição, demais por score
     state.filteredLeads = state.leads
         .filter(passesFilter)
-        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+        .sort((a, b) => {
+            if (a.recentFollowerOrder != null && b.recentFollowerOrder != null)
+                return (a.recentFollowerOrder || 0) - (b.recentFollowerOrder || 0);
+            return (b.score ?? 0) - (a.score ?? 0);
+        });
 
     if (state.filteredLeads.length === 0) {
         tbody.innerHTML = `<tr class="empty-row" id="emptyRow"><td colspan="10"><div class="empty-state">
@@ -1033,8 +1581,11 @@ function renderAllLeads() {
     } else {
         // Instagram — renderização com score/fotos inline
         state.filteredLeads.forEach(lead => {
-            const score = lead.score ?? 0;
-            const { label: slabel, cls } = scoreLabel(score);
+            const isRecent2 = lead.recentFollowerOrder != null;
+            const score = isRecent2 ? 0 : (lead.score ?? 0);
+            const { label: slabel, cls } = isRecent2
+                ? { label: `#${lead.recentFollowerOrder}`, cls: 'score-neutral' }
+                : scoreLabel(score);
             const initial = ((lead.fullName || lead.username || '?').charAt(0)).toUpperCase();
             const photoHtml = lead.photoUrl
                 ? `<img src="${lead.photoUrl}" class="user-photo" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
@@ -1042,20 +1593,22 @@ function renderAllLeads() {
                 : `<div class="user-photo-placeholder">${initial}</div>`;
 
             const row = document.createElement('tr');
+            if (lead.isTop10) row.classList.add('top10-row');
             row.dataset.id       = lead.id;
-            row.dataset.scoreVal = score;
+            row.dataset.scoreVal = isRecent2 ? lead.recentFollowerOrder : score;
             row.dataset.score    = cls;
 
+            const whyExtra2 = isRecent2 ? '' : buildTop10Badge(lead) + buildSegmentReasons(lead);
             row.innerHTML = `
                 <td><input type="checkbox" class="row-checkbox" data-id="${lead.id}"></td>
                 <td>${photoHtml}</td>
                 <td><a href="https://instagram.com/${lead.username}" target="_blank" class="ig-link">@${lead.username}</a>${lead.isPrivate?' <i class="fas fa-lock" style="color:var(--gray);font-size:.7rem"></i>':''}<br><small style="color:var(--gray)">${lead.fullName||''}</small></td>
-                <td><span class="score-badge ${cls}">${slabel}<br><small>${score}pts</small></span></td>
-                <td class="why-cell">${buildWhyHtml(lead)}</td>
+                <td>${isRecent2 ? `<span style="color:var(--gray);font-size:.85rem">${slabel}</span>` : `<span class="score-badge ${cls}">${slabel}<br><small>${score}pts</small></span>`}</td>
+                <td class="why-cell">${isRecent2 ? '' : whyExtra2 + buildWhyHtml(lead)}</td>
                 <td class="whatsapp-value">${lead.whatsapp?`<a href="https://wa.me/${lead.whatsapp.replace(/\D/g,'')}" target="_blank" class="contact-link wa-link"><i class="fab fa-whatsapp"></i> ${lead.whatsapp}</a>`:'-'}</td>
                 <td class="email-value">${lead.email?`<a href="mailto:${lead.email}" class="contact-link mail-link"><i class="fas fa-envelope"></i> ${lead.email}</a>`:'-'}</td>
                 <td class="bio-text" title="${lead.bio||''}">${lead.bio?lead.bio.slice(0,60)+(lead.bio.length>60?'...':''):'-'}</td>
-                <td><button class="action-btn delete" onclick="deleteLead('${lead.id}')" title="Excluir"><i class="fas fa-trash"></i></button></td>
+                <td>${buildAutoActionsHtml(lead)}<button class="action-btn delete" onclick="deleteLead('${lead.id}')" title="Excluir"><i class="fas fa-trash"></i></button></td>
             `;
             tbody.appendChild(row);
         });
@@ -1167,35 +1720,58 @@ function exportToPDF() {
     if (typeof html2pdf === 'undefined') { showToast('Biblioteca PDF ainda carregando. Aguarde e tente novamente.', 'error'); return; }
     if (!state.leads.length) { showToast('Nenhum lead para exportar', 'warning'); return; }
 
-    // Google Maps PDF export
+    // Google Maps PDF export — modo auto tem relatório aprimorado
     if (state.activeSource === 'google') {
-        const date  = new Date().toLocaleDateString('pt-BR', { day:'2-digit', month:'long', year:'numeric' });
-        const total = state.leads.length;
+        const date      = new Date().toLocaleDateString('pt-BR', { day:'2-digit', month:'long', year:'numeric' });
+        const total     = state.leads.length;
         const withPhone = state.leads.filter(l => l.phone).length;
         const withSite  = state.leads.filter(l => l.website).length;
+        const segment   = state.autoSegment || '';
         const keyword   = state.leads[0]?.keyword || '';
-        const cards = state.leads.map((l, i) => `
-            <div style="page-break-inside:avoid;border:1px solid #e8e8e8;border-radius:10px;padding:14px 16px;margin-bottom:10px;background:#fff">
+        const isAuto    = state.flowMode === 'auto' && segment;
+        const top10     = state.leads.filter(l => l.isTop10);
+
+        const headerBg  = isAuto
+            ? 'linear-gradient(135deg,#1e3c72,#2a5298)'
+            : 'linear-gradient(135deg,#1a73e8,#0d47a1)';
+
+        const cards = state.leads.map((l, i) => {
+            const isTop = l.isTop10;
+            const segPills = (l.segmentReasons || []).map(r =>
+                `<span style="display:inline-block;background:#e8f5e9;color:#2e7d32;border-radius:4px;padding:1px 6px;font-size:9px;margin:1px">${r}</span>`
+            ).join('');
+            return `
+            <div style="page-break-inside:avoid;border:${isTop ? '2px solid #F39C12' : '1px solid #e8e8e8'};border-radius:10px;padding:14px 16px;margin-bottom:10px;background:${isTop ? '#fffde7' : '#fff'}">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start">
                     <div style="flex:1">
-                        <div style="font-size:14px;font-weight:700;color:#1A1A2E">${i+1}. ${l.name}</div>
+                        ${isTop ? `<span style="background:#F39C12;color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;margin-right:4px">🏆 TOP ${l.rank}</span>` : ''}
+                        <span style="font-size:14px;font-weight:700;color:#1A1A2E">${i+1}. ${l.name}</span>
                         ${l.category ? `<div style="font-size:11px;color:#888;margin-top:2px">${l.category}</div>` : ''}
+                        ${segPills ? `<div style="margin-top:4px">${segPills}</div>` : ''}
                     </div>
-                    ${l.rating ? `<div style="font-size:12px;color:#F39C12;font-weight:700">⭐ ${l.rating.toFixed(1)}${l.reviewCount ? ` (${l.reviewCount.toLocaleString('pt-BR')})` : ''}</div>` : ''}
+                    <div style="text-align:right;flex-shrink:0;margin-left:8px">
+                        ${l.rating ? `<div style="font-size:12px;color:#F39C12;font-weight:700">⭐ ${l.rating.toFixed(1)}${l.reviewCount ? ` (${l.reviewCount.toLocaleString('pt-BR')})` : ''}</div>` : ''}
+                        ${isAuto && l.score != null ? `<div style="font-size:10px;color:#555;margin-top:2px">Score: ${l.score}pts</div>` : ''}
+                    </div>
                 </div>
                 <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;font-size:12px">
                     ${l.phone   ? `<div>📞 <a href="tel:${l.phone.replace(/\D/g,'')}" style="color:#00C853">${l.phone}</a></div>` : ''}
                     ${l.address ? `<div style="color:#555">📍 ${l.address}</div>` : ''}
                     ${l.website ? `<div>🌐 <a href="${l.website}" target="_blank" style="color:#0088cc">${l.website}</a></div>` : ''}
                 </div>
-            </div>`).join('');
+            </div>`;
+        }).join('');
         const html = `<div style="font-family:Inter,Arial,sans-serif;background:#f8fafc;padding:0">
-            <div style="background:linear-gradient(135deg,#1a73e8,#0d47a1);color:#fff;padding:28px 36px">
-                <div style="font-size:22px;font-weight:900">UltraProspec — Google Maps</div>
-                <div style="font-size:13px;opacity:.85;margin-top:6px">Busca: "${keyword}" · ${date}</div>
-                <div style="display:flex;gap:20px;margin-top:14px;font-size:13px">
+            <div style="background:${headerBg};color:#fff;padding:28px 36px">
+                <div style="font-size:22px;font-weight:900">UltraProspec — Google Maps${isAuto ? ' · Ranking Inteligente' : ''}</div>
+                ${isAuto
+                    ? `<div style="font-size:13px;opacity:.85;margin-top:6px">Segmento: "${segment}" · ${date}</div>`
+                    : `<div style="font-size:13px;opacity:.85;margin-top:6px">Busca: "${keyword}" · ${date}</div>`}
+                <div style="display:flex;gap:20px;margin-top:14px;font-size:13px;flex-wrap:wrap">
                     <span>📍 ${total} empresas</span><span>📞 ${withPhone} com telefone</span><span>🌐 ${withSite} com site</span>
+                    ${isAuto ? `<span>🏆 ${top10.length} leads destaque</span>` : ''}
                 </div>
+                ${isAuto ? `<div style="margin-top:10px;font-size:11px;opacity:.7">Leads rankeados automaticamente com base no segmento informado · Score máx. 100pts</div>` : ''}
             </div>
             <div style="padding:20px 36px 36px">${cards}</div>
         </div>`;
@@ -1216,23 +1792,26 @@ function exportToPDF() {
     }
 
     // Sempre inclui todos os leads: quentes no topo, frios no final
+    const igIsAuto  = state.flowMode === 'auto' && !!state.autoSegment;
+    const igSegment = state.autoSegment || '';
+    const igTop10   = state.leads.filter(l => l.isTop10);
 
     // Detectar método de captura pelo source dos leads
     const sources    = [...new Set(state.leads.map(l => l.source).filter(Boolean))];
-    const isHashtag  = sources.some(s => s.startsWith('busca:') || s.startsWith('#'));
+    const isHashtag  = !igIsAuto && sources.some(s => s.startsWith('busca:') || s.startsWith('#'));
     const isFollower = sources.some(s => s.includes('seguidor') || s.includes('@'));
     const isLikes    = sources.some(s => s.includes('curtidor'));
     const keywords   = sources.filter(s => s.startsWith('busca:')).map(s => s.replace('busca:', '').trim());
 
-    const captureMethod = isHashtag
-        ? `Busca por Profissional — palavras-chave: ${keywords.join(', ') || sources.join(', ')}`
-        : isLikes
-            ? `Curtidores de Posts Recentes — ${sources.join(', ')}`
-            : `Análise de Perfil — ${sources.join(', ')}`;
+    const captureMethod = igIsAuto
+        ? `Ranking Automático por Segmento — "${igSegment}"`
+        : isHashtag
+            ? `Busca por Profissional — palavras-chave: ${keywords.join(', ') || sources.join(', ')}`
+            : isLikes
+                ? `Curtidores de Posts Recentes — ${sources.join(', ')}`
+                : `Análise de Perfil — ${sources.join(', ')}`;
 
-    // Para busca por profissional, incluir todos (não faz sentido hot/cold para busca por nicho)
-    const sorted = [...state.leads]
-        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0)); // hot → warm → cold
+    const sorted = [...state.leads].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
     if (!sorted.length) {
         showToast('Nenhum lead para exportar com os filtros atuais', 'warning');
@@ -1288,8 +1867,13 @@ function exportToPDF() {
         const sc    = scoreColor(score);
         const igUrl = `https://instagram.com/${lead.username}`;
         const waUrl = lead.whatsapp ? `https://wa.me/${lead.whatsapp.replace(/\D/g,'')}` : null;
+        const segPillsIg = (lead.segmentReasons || []).map(r =>
+            actionPill(r, '#1565C0')).join('');
+        const top10Mark = lead.isTop10
+            ? `<span style="background:#F39C12;color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;margin-right:5px">🏆 TOP ${lead.rank}</span>`
+            : '';
         return `
-        <div style="page-break-inside:avoid;border:1px solid #e8e8e8;border-radius:12px;padding:16px;margin-bottom:12px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
+        <div style="page-break-inside:avoid;border:${lead.isTop10?'2px solid #F39C12':'1px solid #e8e8e8'};border-radius:12px;padding:16px;margin-bottom:12px;background:${lead.isTop10?'#fffde7':'#fff'};box-shadow:0 2px 8px rgba(0,0,0,0.06)">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
                 <div>
                     <div style="display:flex;align-items:center;gap:8px">
@@ -1297,7 +1881,7 @@ function exportToPDF() {
                             ${(lead.fullName || lead.username).charAt(0).toUpperCase()}
                         </div>
                         <div>
-                            <a href="${igUrl}" target="_blank" style="color:#00C853;font-weight:700;font-size:14px;text-decoration:none">@${lead.username}</a>
+                            ${top10Mark}<a href="${igUrl}" target="_blank" style="color:#00C853;font-weight:700;font-size:14px;text-decoration:none">@${lead.username}</a>
                             ${lead.fullName ? `<div style="color:#666;font-size:12px">${lead.fullName}</div>` : ''}
                         </div>
                     </div>
@@ -1307,6 +1891,7 @@ function exportToPDF() {
                     <div style="color:#999;font-size:11px;margin-top:2px">${score} pontos</div>
                 </div>
             </div>
+            ${segPillsIg ? `<div style="margin-bottom:6px">${segPillsIg}</div>` : ''}
             <div style="margin-bottom:10px">${whyPills(lead)}</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
                 <a href="${igUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;background:#00C853;color:#fff;border-radius:6px;font-size:11px;font-weight:600;text-decoration:none">
@@ -1328,10 +1913,13 @@ function exportToPDF() {
         <div style="background:linear-gradient(135deg,#071210,#0D3B1E,#00C853);padding:60px 40px 50px;color:#fff;position:relative;overflow:hidden">
             <div style="position:absolute;top:-40px;right:-40px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,0.04)"></div>
             <div style="position:absolute;bottom:-60px;left:-30px;width:180px;height:180px;border-radius:50%;background:rgba(255,255,255,0.03)"></div>
-            <div style="font-size:11px;font-weight:700;letter-spacing:3px;opacity:.6;text-transform:uppercase;margin-bottom:20px">Inteligência Comercial · Instagram</div>
-            <div style="font-size:36px;font-weight:900;letter-spacing:-1.5px;line-height:1.1;margin-bottom:14px">Relatório de<br>Leads Qualificados</div>
+            <div style="font-size:11px;font-weight:700;letter-spacing:3px;opacity:.6;text-transform:uppercase;margin-bottom:20px">Inteligência Comercial · Instagram${igIsAuto ? ' · Ranking por Segmento' : ''}</div>
+            <div style="font-size:36px;font-weight:900;letter-spacing:-1.5px;line-height:1.1;margin-bottom:14px">Relatório de<br>${igIsAuto ? 'Leads Rankeados' : 'Leads Qualificados'}</div>
+            ${igIsAuto ? `<div style="font-size:13px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:8px 16px;margin-bottom:16px;display:inline-block">🎯 Segmento: <strong>"${igSegment}"</strong> · ${igTop10.length} leads destaque identificados</div>` : ''}
             <div style="font-size:15px;opacity:.85;max-width:480px;line-height:1.7;margin-bottom:32px">
-                Pessoas reais do seu nicho que já demonstraram interesse ativo em produtos ou serviços como o seu — identificadas por comportamento, não por achismo.
+                ${igIsAuto
+                    ? `Leads selecionados e rankeados automaticamente com base no segmento "${igSegment}" — priorizando quem tem maior potencial de conversão.`
+                    : 'Pessoas reais do seu nicho que já demonstraram interesse ativo em produtos ou serviços como o seu — identificadas por comportamento, não por achismo.'}
             </div>
             <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);border-radius:999px;padding:8px 18px;font-size:12px">
                 📅 Gerado em ${date}
@@ -1704,25 +2292,44 @@ const mwState = {
     source: null,
     currentStep: 'source',
     igType: 'profile_analysis',
+    flowMode: 'auto',   // 'auto' | 'advanced'
 };
 
 let mwPendingLogin   = false;
 let mwCaptureTimer   = null;   // interval para monitor da captura
 let mwLastPdfExport  = null;   // referência ao PDF gerado
 
-const MW_FLOW_IG     = ['source','ig_type','ig_config','ig_credits','ig_login','ig_ready'];
-const MW_FLOW_GOOGLE = ['source','google_config','google_credits','google_ready'];
+// Fluxos avançados (originais)
+const MW_FLOW_IG_ADV      = ['source','mode_select','ig_type','ig_config','ig_credits','ig_login','ig_ready'];
+const MW_FLOW_GOOGLE_ADV  = ['source','mode_select','google_config','google_credits','google_ready'];
+// Fluxos automáticos (novos)
+const MW_FLOW_IG_AUTO     = ['source','mode_select','auto_ig_config','ig_credits','ig_login','ig_ready'];
+const MW_FLOW_GOOGLE_AUTO = ['source','mode_select','auto_google_config','google_credits','google_ready'];
+// Legado — mantido para compatibilidade interna
+const MW_FLOW_IG     = MW_FLOW_IG_ADV;
+const MW_FLOW_GOOGLE = MW_FLOW_GOOGLE_ADV;
+
+function getMwFlow() {
+    if (mwState.source === 'google') {
+        return mwState.flowMode === 'auto' ? MW_FLOW_GOOGLE_AUTO : MW_FLOW_GOOGLE_ADV;
+    }
+    return mwState.flowMode === 'auto' ? MW_FLOW_IG_AUTO : MW_FLOW_IG_ADV;
+}
 
 const MW_STEP_EL = {
-    source:          'mwStepSource',
-    ig_type:         'mwStepIGType',
-    ig_config:       'mwStepIGConfig',
-    ig_credits:      'mwStepIGCredits',
-    ig_login:        'mwStepIGLogin',
-    ig_ready:        'mwStepIGReady',
-    google_config:   'mwStepGoogleConfig',
-    google_credits:  'mwStepGoogleCredits',
-    google_ready:    'mwStepGoogleReady',
+    source:             'mwStepSource',
+    mode_select:        'mwStepModeSelect',
+    monitor:            'mwStepMonitor',
+    auto_ig_config:     'mwStepAutoIGConfig',
+    auto_google_config: 'mwStepAutoGoogleConfig',
+    ig_type:            'mwStepIGType',
+    ig_config:          'mwStepIGConfig',
+    ig_credits:         'mwStepIGCredits',
+    ig_login:           'mwStepIGLogin',
+    ig_ready:           'mwStepIGReady',
+    google_config:      'mwStepGoogleConfig',
+    google_credits:     'mwStepGoogleCredits',
+    google_ready:       'mwStepGoogleReady',
 };
 
 function mwIsMobile() {
@@ -1768,7 +2375,38 @@ function mwChooseSource(source) {
     setSource(source);
     document.querySelectorAll('.mw-source-card').forEach(c => c.classList.remove('selected'));
     document.getElementById(source === 'instagram' ? 'mwCardIG' : 'mwCardGoogle')?.classList.add('selected');
-    setTimeout(() => mwGoToStep(source === 'instagram' ? 'ig_type' : 'google_config'), 220);
+    setTimeout(() => mwGoToStep('mode_select'), 220);
+}
+
+// ─── Seleção de modo (Auto / Avançado) ───────────────────────
+function mwChooseMode(mode) {
+    if (mode === 'monitor') {
+        // Vai para step de explicação do monitor
+        setTimeout(() => mwGoToStep('monitor'), 180);
+        return;
+    }
+    mwState.flowMode = mode;
+    setFlowMode(mode);
+    document.getElementById('mwModeAutoBtn')?.classList.toggle('mw-mode-card-active', mode === 'auto');
+    document.getElementById('mwModeAdvBtn')?.classList.toggle('mw-mode-card-active', mode === 'advanced');
+    const nextStep = mwState.source === 'google'
+        ? (mode === 'auto' ? 'auto_google_config' : 'google_config')
+        : (mode === 'auto' ? 'auto_ig_config'     : 'ig_type');
+    setTimeout(() => mwGoToStep(nextStep), 180);
+}
+
+function mwGoToMonitor() {
+    // Mostra tela do monitor mobile
+    document.getElementById('mobileWizard').style.display    = 'none';
+    document.getElementById('mwCaptureScreen').style.display = 'none';
+    const ms = document.getElementById('mwMonitorScreen');
+    if (ms) ms.style.display = 'flex';
+    monitorUI.open  = true;
+    monitorUI.unread = 0;
+    updateMonitorBadge();
+    monitorSyncMobileDesktop();
+    if (Notification.permission === 'default')
+        document.getElementById('btnNotifPermMobile')?.style.setProperty('display', 'block');
 }
 
 // ─── Navegação ────────────────────────────────────────────────
@@ -1796,14 +2434,18 @@ function mwGoToStep(step) {
 }
 
 function mwBack() {
-    const flow = mwState.source === 'google' ? MW_FLOW_GOOGLE : MW_FLOW_IG;
+    if (mwState.currentStep === 'monitor') {
+        mwGoToStep('mode_select');
+        return;
+    }
+    const flow = getMwFlow();
     const idx  = flow.indexOf(mwState.currentStep);
     if (idx <= 0) return;
     mwGoToStep(flow[idx - 1]);
 }
 
 function mwNext() {
-    const flow   = mwState.source === 'google' ? MW_FLOW_GOOGLE : MW_FLOW_IG;
+    const flow   = getMwFlow();
     const idx    = flow.indexOf(mwState.currentStep);
     const isLast = idx === flow.length - 1;
 
@@ -1814,6 +2456,22 @@ function mwNext() {
 
 // ─── Validação ────────────────────────────────────────────────
 function mwValidate(step) {
+    if (step === 'auto_ig_config') {
+        if (!(document.getElementById('mwAutoIGTarget')?.value || '').trim()) {
+            showToast('Informe o perfil do concorrente', 'error'); return false;
+        }
+        if (!(document.getElementById('mwAutoIGSegment')?.value || '').trim()) {
+            showToast('Informe seu segmento — é obrigatório para o ranking', 'error'); return false;
+        }
+    }
+    if (step === 'auto_google_config') {
+        if (!(document.getElementById('mwAutoGmapsTerm')?.value || '').trim()) {
+            showToast('Informe a palavra-chave de busca', 'error'); return false;
+        }
+        if (!(document.getElementById('mwAutoGmapsSegment')?.value || '').trim()) {
+            showToast('Informe seu segmento — é obrigatório para o ranking', 'error'); return false;
+        }
+    }
     if (step === 'ig_config') {
         const type = mwState.igType;
         if (type === 'common_followers') {
@@ -2062,9 +2720,10 @@ async function mwExecute() {
         if (!loadIgSession()?.loggedIn) {
             showToast('Conecte o Instagram antes de capturar', 'error'); return;
         }
-        // Validar tamanho do perfil alvo (regra: 50-10.000 seguidores)
+        // Validar tamanho do perfil alvo (só no modo avançado)
         const igType = mwState.igType;
-        const needsProfileCheck = ['profile_analysis','recent_likes','followers','hashtag'].includes(igType);
+        const needsProfileCheck = mwState.flowMode === 'advanced' &&
+            ['profile_analysis','recent_likes','followers','hashtag'].includes(igType);
         if (needsProfileCheck) {
             const rawTarget = igType === 'hashtag'
                 ? (document.getElementById('mwIGTarget')?.value || '').trim()
@@ -2140,6 +2799,52 @@ async function mwExecute() {
 }
 
 function mwSyncToSidebar() {
+    // Sincroniza modo (auto/avançado) com o desktop
+    setFlowMode(mwState.flowMode);
+
+    if (mwState.source === 'instagram' && mwState.flowMode === 'auto') {
+        // Modo auto IG: preenche campos do sidebar auto
+        const target  = document.getElementById('mwAutoIGTarget')?.value  || '';
+        const segment = document.getElementById('mwAutoIGSegment')?.value || '';
+        const posts   = document.getElementById('mwAutoIGPosts')?.value   || '10';
+        const useAI   = document.getElementById('mwAutoIGUseAI')?.checked || false;
+        const aiModel = document.getElementById('mwAutoIGAIModel')?.value || 'llama3';
+        const elTarget  = document.getElementById('autoIGTarget');
+        const elSeg     = document.getElementById('autoSegmentIG');
+        const elPosts   = document.getElementById('autoIGPosts');
+        const elUseAI   = document.getElementById('autoUseAIIG');
+        const elModel   = document.getElementById('autoAIModelIG');
+        if (elTarget) elTarget.value   = target;
+        if (elSeg)    elSeg.value      = segment;
+        if (elPosts)  elPosts.value    = posts;
+        if (elUseAI)  elUseAI.checked  = useAI;
+        if (elModel)  elModel.value    = aiModel;
+        // Trigger config de IA
+        toggleAIConfig('ig');
+        return;
+    }
+
+    if (mwState.source === 'google' && mwState.flowMode === 'auto') {
+        // Modo auto Google: preenche campos do sidebar auto
+        const term    = document.getElementById('mwAutoGmapsTerm')?.value    || '';
+        const city    = document.getElementById('mwAutoGmapsCity')?.value    || '';
+        const segment = document.getElementById('mwAutoGmapsSegment')?.value || '';
+        const useAI   = document.getElementById('mwAutoGmapsUseAI')?.checked || false;
+        const aiModel = document.getElementById('mwAutoGmapsAIModel')?.value || 'llama3';
+        const elTerm  = document.getElementById('autoGmapsTerm');
+        const elCity  = document.getElementById('autoGmapsCity');
+        const elSeg   = document.getElementById('autoSegmentGmaps');
+        const elUseAI = document.getElementById('autoUseAIGmaps');
+        const elModel = document.getElementById('autoAIModelGmaps');
+        if (elTerm)  elTerm.value    = term;
+        if (elCity)  elCity.value    = city;
+        if (elSeg)   elSeg.value     = segment;
+        if (elUseAI) elUseAI.checked = useAI;
+        if (elModel) elModel.value   = aiModel;
+        toggleAIConfig('gmaps');
+        return;
+    }
+
     if (mwState.source === 'instagram') {
         const radio = document.querySelector(`input[name="captureType"][value="${mwState.igType}"]`);
         if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
@@ -2353,8 +3058,7 @@ function mwUpdateTopbar(step) {
     const backIcon = document.getElementById('mwBackIcon');
     if (backIcon) backIcon.style.visibility = step === 'source' ? 'hidden' : 'visible';
 
-    const flow = mwState.source === 'google' ? MW_FLOW_GOOGLE
-        : (mwState.source ? MW_FLOW_IG : ['source']);
+    const flow = mwState.source ? getMwFlow() : ['source'];
     const dotsEl = document.getElementById('mwDots');
     if (!dotsEl) return;
     const idx = flow.indexOf(step);
@@ -2370,9 +3074,11 @@ function mwUpdateFooter(step) {
     const footer   = document.querySelector('.mw-footer');
     if (!btnBack || !btnNext) return;
 
-    const isSource = step === 'source';
-    const flow     = mwState.source === 'google' ? MW_FLOW_GOOGLE : MW_FLOW_IG;
-    const isLast   = flow.indexOf(step) === flow.length - 1;
+    const isSource     = step === 'source';
+    const isModeSelect = step === 'mode_select';
+    const isMonitor    = step === 'monitor';
+    const flow         = getMwFlow();
+    const isLast       = flow.indexOf(step) === flow.length - 1;
 
     // Na tela inicial não precisa de footer — esconde o container inteiro
     if (footer) footer.style.display = isSource ? 'none' : 'flex';
@@ -2387,7 +3093,7 @@ function mwUpdateFooter(step) {
     // Ocultar no step de login quando não conectado
     const isLoginNotConn = step === 'ig_login' && !loadIgSession()?.loggedIn;
 
-    if (isSource || isCreditsWithoutFunds || isLoginNotConn) {
+    if (isSource || isModeSelect || isMonitor || isCreditsWithoutFunds || isLoginNotConn) {
         btnNext.style.display = 'none';
     } else {
         btnNext.style.display = 'flex';
@@ -2416,6 +3122,7 @@ function mwSetupIGConfig() {
 
     const desc = {
         profile_analysis: 'Análise completa: seguidores + curtidores + comentaristas',
+        recent_followers: 'Os seguidores mais recentes do perfil — ordem do mais novo ao mais antigo',
         recent_likes:     'Quem curtiu os últimos posts do perfil',
         comments:         'Comentaristas de um post específico',
         common_followers: 'Quem segue 2 ou mais dos perfis informados',
@@ -2428,6 +3135,11 @@ function mwSetupIGConfig() {
     switch (type) {
         case 'profile_analysis':
             show('mwFgTarget'); show('mwFgPosts');
+            if (lblEl) lblEl.textContent = 'Perfil do Concorrente';
+            if (tgtEl) tgtEl.placeholder = '@usuario ou URL do perfil';
+            break;
+        case 'recent_followers':
+            show('mwFgTarget');
             if (lblEl) lblEl.textContent = 'Perfil do Concorrente';
             if (tgtEl) tgtEl.placeholder = '@usuario ou URL do perfil';
             break;
@@ -2503,4 +3215,291 @@ function mwCloseMenu() {
 }
 
 // ─── Bootstrap ────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', mwInit);
+document.addEventListener('DOMContentLoaded', () => { mwInit(); monitorInit(); });
+
+// ============================================
+// MONITOR DE CONCORRENTES
+// ============================================
+const monitorUI = {
+    es:          null,   // EventSource
+    unread:      0,
+    open:        false,
+};
+
+function isMobileView() {
+    return window.innerWidth <= 768 || !!document.getElementById('mobileWizard')?.offsetParent;
+}
+
+function openMonitorPanel() {
+    monitorUI.open = true;
+    monitorUI.unread = 0;
+    updateMonitorBadge();
+
+    if (isMobileView()) {
+        // Mobile: mostra tela fullscreen
+        document.getElementById('mobileWizard').style.display       = 'none';
+        document.getElementById('mwCaptureScreen').style.display    = 'none';
+        const ms = document.getElementById('mwMonitorScreen');
+        if (ms) { ms.style.display = 'flex'; }
+        if (Notification.permission === 'default')
+            document.getElementById('btnNotifPermMobile')?.style.setProperty('display', 'block');
+    } else {
+        // Desktop: mostra no sidebar
+        ['flowToggle','sidebarAutoIG','sidebarAutoGoogle','sidebarIG','sidebarGoogle'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+        const p = document.getElementById('monitorPanel');
+        if (p) p.style.display = 'block';
+        if (Notification.permission === 'default')
+            document.getElementById('btnNotifPerm')?.style.setProperty('display', 'block');
+        document.getElementById('monitorInput')?.focus();
+    }
+    monitorSyncMobileDesktop();
+}
+
+function closeMobileMonitor() {
+    monitorUI.open = false;
+    document.getElementById('mwMonitorScreen').style.display = 'none';
+    document.getElementById('mobileWizard').style.display    = 'flex';
+}
+
+function closeMonitorPanel() {
+    monitorUI.open = false;
+    document.getElementById('monitorPanel').style.display = 'none';
+    setFlowMode(state.flowMode);
+}
+
+function monitorSyncMobileDesktop() {
+    // Sincroniza lista de perfis e feed entre desktop e mobile
+    const listD = document.getElementById('monitorProfileList');
+    const listM = document.getElementById('monitorProfileListMobile');
+    if (listD && listM) listM.innerHTML = listD.innerHTML;
+    const feedD = document.getElementById('monitorFeed');
+    const feedM = document.getElementById('monitorFeedMobile');
+    if (feedD && feedM) {
+        feedM.innerHTML = feedD.innerHTML;
+        const sec = document.getElementById('monitorFeedSectionMobile');
+        if (sec) sec.style.display = feedD.children.length > 0 ? 'block' : 'none';
+    }
+}
+
+async function monitorAddProfileMobile() {
+    const input = document.getElementById('monitorInputMobile');
+    if (input) {
+        document.getElementById('monitorInput').value = input.value;
+        input.value = '';
+    }
+    await monitorAddProfile();
+    monitorSyncMobileDesktop();
+}
+
+function updateMonitorBadge() {
+    const n = monitorUI.unread;
+    // Badges com número (sidebar desktop + menu hambúrguer)
+    ['monitorUnreadBadge', 'mwMenuMonitorBadge'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent  = n > 0 ? String(n) : '';
+        el.style.display = n > 0 ? 'inline-flex' : 'none';
+    });
+    // Badge ponto (topbar do wizard)
+    const dot = document.getElementById('monitorTopbarBadge');
+    if (dot) dot.style.display = n > 0 ? 'block' : 'none';
+}
+
+async function monitorInit() {
+    await monitorLoadProfiles();
+    await monitorLoadEvents();
+    monitorSyncMobileDesktop();
+    monitorConnectSSE();
+
+    // Pede permissão de notificação se ainda não decidiu
+    if (Notification.permission === 'default') {
+        document.getElementById('btnNotifPerm')?.style.setProperty('display', 'block');
+    }
+}
+
+function monitorConnectSSE() {
+    if (monitorUI.es) monitorUI.es.close();
+    const es = new EventSource('/api/monitor/stream');
+    monitorUI.es = es;
+
+    es.onmessage = e => {
+        try { monitorHandleEvent(JSON.parse(e.data)); } catch {}
+    };
+    es.onerror = () => {
+        setTimeout(monitorConnectSSE, 15000); // reconecta após 15s
+    };
+}
+
+function monitorHandleEvent(ev) {
+    if (ev.type === 'new_follower') {
+        monitorAddFeedItem(ev.profile, ev.follower);
+        if (!monitorUI.open) {
+            monitorUI.unread++;
+            updateMonitorBadge();
+        }
+        // Notificação do browser
+        if (Notification.permission === 'granted') {
+            new Notification(`Novo seguidor em @${ev.profile}`, {
+                body: `@${ev.follower.username}${ev.follower.fullName ? ' — ' + ev.follower.fullName : ''}`,
+                icon: ev.follower.photoUrl || '/favicon.ico',
+                tag:  `monitor-${ev.follower.id}`,
+            });
+        }
+        showToast(`Novo seguidor em @${ev.profile}: @${ev.follower.username}`, 'success', 6000);
+    }
+    if (ev.type === 'sync_start')    monitorUpdateProfileStatus(ev.profile, 'syncing', 'Sincronizando...');
+    if (ev.type === 'sync_progress') monitorUpdateProfileStatus(ev.profile, 'syncing', `Sincronizando... ${ev.count}`);
+    if (ev.type === 'sync_done')     monitorUpdateProfileStatus(ev.profile, 'active',  `${ev.count} seguidores`);
+    if (ev.type === 'profile_updated') monitorUpdateProfileStatus(ev.profile, 'active', `Atualizado agora`);
+    if (ev.type === 'profile_error')   monitorUpdateProfileStatus(ev.profile, 'error',  ev.error);
+    monitorSyncMobileDesktop();
+}
+
+async function monitorLoadProfiles() {
+    try {
+        const r = await fetch('/api/monitor/profiles');
+        const { profiles } = await r.json();
+        const list = document.getElementById('monitorProfileList');
+        if (!list) return;
+        list.innerHTML = '';
+        profiles.forEach(p => monitorRenderProfile(p));
+    } catch {}
+}
+
+async function monitorLoadEvents() {
+    try {
+        const r = await fetch('/api/monitor/events');
+        const { events } = await r.json();
+        const feed = document.getElementById('monitorFeed');
+        if (!feed) return;
+        feed.innerHTML = '';
+        events.forEach(ev => monitorAddFeedItem(ev.profile_username, {
+            id: ev.follower_id, username: ev.follower_username,
+            fullName: ev.follower_fullname, photoUrl: ev.follower_photo
+        }, new Date(ev.detected_at), ev.seen === 0));
+        const unseen = events.filter(e => e.seen === 0).length;
+        if (unseen > 0 && !monitorUI.open) { monitorUI.unread = unseen; updateMonitorBadge(); }
+        if (events.length > 0) document.getElementById('monitorFeedSection')?.style.setProperty('display', 'block');
+    } catch {}
+}
+
+function monitorRenderProfile(p) {
+    const list = document.getElementById('monitorProfileList');
+    if (!list) return;
+    const existing = list.querySelector(`[data-profile="${p.username}"]`);
+    if (existing) { monitorUpdateProfileStatus(p.username, p.status, monitorStatusText(p)); return; }
+
+    const div = document.createElement('div');
+    div.className = 'monitor-profile-item';
+    div.dataset.profile = p.username;
+    div.innerHTML = `
+        <div style="flex:1;min-width:0">
+            <span class="monitor-profile-name">@${p.username}</span>
+            <span class="monitor-profile-status" id="mps-${p.username}">${monitorStatusText(p)}</span>
+        </div>
+        <a href="https://instagram.com/${p.username}" target="_blank" style="color:var(--gray);font-size:.8rem;padding:.2rem .4rem"><i class="fab fa-instagram"></i></a>
+        <button onclick="monitorRemoveProfile('${p.username}')" style="background:none;border:none;color:var(--gray);cursor:pointer;font-size:.8rem;padding:.2rem .4rem"><i class="fas fa-trash"></i></button>
+    `;
+    list.appendChild(div);
+}
+
+function monitorStatusText(p) {
+    if (p.status === 'syncing') return 'Sincronizando...';
+    if (p.status === 'error')   return 'Erro — verifique o perfil';
+    if (p.status === 'active' && p.last_checked) {
+        const min = Math.round((Date.now() - new Date(p.last_checked)) / 60000);
+        return min < 2 ? 'Verificado agora' : `Verificado há ${min}min`;
+    }
+    return 'Aguardando...';
+}
+
+function monitorUpdateProfileStatus(username, status, text) {
+    const el = document.getElementById(`mps-${username}`);
+    if (el) el.textContent = text;
+    const item = document.querySelector(`[data-profile="${username}"]`);
+    if (item) {
+        item.classList.toggle('monitor-status-error',   status === 'error');
+        item.classList.toggle('monitor-status-syncing', status === 'syncing');
+        item.classList.toggle('monitor-status-active',  status === 'active');
+    }
+}
+
+function monitorAddFeedItem(profile, follower, date, isNew) {
+    const feed = document.getElementById('monitorFeed');
+    if (!feed) return;
+    document.getElementById('monitorFeedSection')?.style.setProperty('display', 'block');
+
+    const div = document.createElement('div');
+    div.className = 'monitor-feed-item' + (isNew !== false ? ' monitor-feed-new' : '');
+    const timeStr = date ? new Date(date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'agora';
+    div.innerHTML = `
+        ${follower.photoUrl ? `<img src="${follower.photoUrl}" class="monitor-feed-photo" onerror="this.style.display='none'">` : '<div class="monitor-feed-photo-placeholder"></div>'}
+        <div style="flex:1;min-width:0">
+            <a href="https://instagram.com/${follower.username}" target="_blank" class="monitor-feed-username">@${follower.username}</a>
+            <span class="monitor-feed-profile">seguiu @${profile}</span>
+        </div>
+        <span class="monitor-feed-time">${timeStr}</span>
+    `;
+    feed.insertBefore(div, feed.firstChild);
+}
+
+async function monitorAddProfile() {
+    const input = document.getElementById('monitorInput');
+    const raw   = (input?.value || '').trim();
+    if (!raw) return;
+    input.value = '';
+    input.disabled = true;
+
+    try {
+        const r = await fetch('/api/monitor/add', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: raw })
+        });
+        const d = await r.json();
+        if (!d.ok) { showToast(d.error || 'Erro ao adicionar perfil', 'error'); return; }
+        monitorRenderProfile({ username: d.username, status: 'pending', follower_count: 0, last_checked: null });
+        showToast(`@${d.username} adicionado — sincronizando seguidores...`, 'success');
+    } catch (err) {
+        showToast('Erro ao adicionar perfil', 'error');
+    } finally {
+        input.disabled = false;
+        input.focus();
+    }
+}
+
+async function monitorRemoveProfile(username) {
+    if (!confirm(`Remover @${username} do monitoramento?`)) return;
+    await fetch('/api/monitor/remove', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username })
+    });
+    document.querySelector(`[data-profile="${username}"]`)?.remove();
+    showToast(`@${username} removido`, 'info');
+}
+
+async function monitorMarkSeen() {
+    await fetch('/api/monitor/events/seen', { method: 'POST' });
+    document.querySelectorAll('.monitor-feed-new').forEach(el => el.classList.remove('monitor-feed-new'));
+    monitorUI.unread = 0;
+    updateMonitorBadge();
+}
+
+function monitorRequestNotifications() {
+    Notification.requestPermission().then(p => {
+        if (p === 'granted') {
+            document.getElementById('btnNotifPerm').style.display = 'none';
+            showToast('Notificações ativadas!', 'success');
+        }
+    });
+}
+
+// Dev helper — adiciona créditos de teste via console do browser:
+//   addTestCredits(50)        → 50 créditos Instagram
+//   addTestCredits(50,'google') → 50 créditos Google
+window.addTestCredits = function(n, type) {
+    addCredits(n || 50, type || 'instagram');
+    console.log(`✅ +${n||50} créditos ${type||'instagram'} adicionados. Total IG: ${getCreditsIG()} | Google: ${getCreditsGoogle()}`);
+};
