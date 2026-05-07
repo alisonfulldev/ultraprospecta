@@ -84,14 +84,21 @@ function loadMonitorCredentials() {
     };
 }
 
+// Utilitários de comportamento humano
+const jitter   = (base, pct = 0.3) => Math.round(base * (1 + (Math.random() * 2 - 1) * pct));
+const randInt  = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+const humanDelay = () => randInt(1000, 2200); // delay entre páginas: 1.0-2.2s
+const isHumanHour = () => { const h = new Date().getHours(); return h >= 7 && h < 23; };
+
 const monitor = {
-  credentials: loadMonitorCredentials(), // carrega do DB ao iniciar
+  credentials: loadMonitorCredentials(),
   clients:     new Set(),
   timer:       null,
   polling:     false,
-  INTERVAL:    2 * 60 * 1000,
-  POLL_PAGES:  10,
-  MAX_PAGES:   400,
+  // Intervalo base 40min ± 25% → entre ~30min e ~50min, nunca previsível
+  INTERVAL_BASE: 40 * 60 * 1000,
+  MAX_PAGES:     400,
+  MAX_PROFILES:  3,
 };
 
 function monitorSend(data) {
@@ -143,31 +150,34 @@ function monitorAxiosMobile() {
 }
 
 // Busca seguidores com fallback automático web→mobile
+// Retorna { data, status } para permitir diagnóstico pelo chamador
 async function monitorFetchFollowersPage(web, mobile, userId, maxId) {
   const params = { count: 50, ...(maxId ? { max_id: maxId } : {}) };
   const endpoint = `/api/v1/friendships/${userId}/followers/`;
 
+  let lastStatus = null;
+
   // Tenta web primeiro
   try {
     const r = await web.get(endpoint, { params });
+    lastStatus = r.status;
     console.log(`[monitor followers] web status=${r.status} users=${r.data?.users?.length ?? '?'}`);
-    if (r.status === 200) return r.data;
-    if (r.status !== 429) {
-      console.warn(`[monitor followers] web status=${r.status} — tentando mobile`);
-    }
+    if (r.status === 200) return { data: r.data, status: 200 };
+    if (r.status !== 429) console.warn(`[monitor followers] web status=${r.status} — tentando mobile`);
   } catch (e) { console.warn('[monitor followers] web erro:', e.message); }
 
   // Fallback mobile
   if (mobile) {
     try {
       const rm = await mobile.get(endpoint, { params });
+      lastStatus = rm.status;
       console.log(`[monitor followers] mobile status=${rm.status} users=${rm.data?.users?.length ?? '?'}`);
-      if (rm.status === 200) return rm.data;
+      if (rm.status === 200) return { data: rm.data, status: 200 };
       console.warn(`[monitor followers] mobile status=${rm.status}`);
     } catch (e) { console.warn('[monitor followers] mobile erro:', e.message); }
   }
 
-  return null; // ambos falharam
+  return { data: null, status: lastStatus }; // ambos falharam
 }
 
 // Sync inicial: busca TODOS os seguidores e salva no DB
@@ -182,25 +192,31 @@ async function monitorFullSync(username, userId) {
     return;
   }
 
-  let maxId = null, total = 0, consecutive429 = 0;
+  let maxId = null, total = 0, failures = 0;
   db.prepare('UPDATE monitor_profiles SET status = ? WHERE username = ?').run('syncing', username);
   monitorSend({ type: 'sync_start', profile: username });
   console.log(`[monitor] iniciando sync @${username} (userId=${userId})`);
 
   for (let pg = 0; pg < monitor.MAX_PAGES; pg++) {
-    const data = await monitorFetchFollowersPage(web, mobile, userId, maxId);
+    const { data, status } = await monitorFetchFollowersPage(web, mobile, userId, maxId);
 
     if (!data) {
-      consecutive429++;
-      console.warn(`[monitor] sync @${username} pg${pg}: sem dados (${consecutive429}ª falha consecutiva)`);
-      if (consecutive429 >= 3) break;
-      await sleep(15000); // espera 15s antes de tentar novamente
+      // 400 = userId inválido — sem ponto em continuar
+      if (status === 400) {
+        console.error(`[monitor] sync @${username}: userId inválido (400) — abortando`);
+        break;
+      }
+      failures++;
+      const waitMs = Math.min(15000 * failures, 120000);
+      console.warn(`[monitor] sync @${username} pg${pg}: falha ${failures} (status=${status}) — aguardando ${waitMs/1000}s`);
+      if (failures >= 5) { console.error(`[monitor] sync @${username}: abortando após 5 falhas`); break; }
+      await sleep(waitMs);
       continue;
     }
-    consecutive429 = 0;
+    failures = 0;
 
     const users = data.users || [];
-    if (!users.length) break;
+    if (!users.length) { console.log(`[monitor] sync @${username} pg${pg}: lista vazia — fim`); break; }
 
     db.transaction(() => { for (const u of users) if (u.pk) insert.run(username, String(u.pk)); })();
     total += users.length;
@@ -209,8 +225,13 @@ async function monitorFullSync(username, userId) {
       monitorSend({ type: 'sync_progress', profile: username, count: total });
 
     maxId = data.next_max_id || null;
-    if (!maxId) break;
-    await sleep(500);
+    const hasMore = data.has_more !== false;
+    console.log(`[monitor] sync @${username} pg${pg}: +${users.length} (total=${total}) next=${maxId} has_more=${data.has_more}`);
+
+    if (!maxId || !hasMore) break;
+
+    // Delay humanizado: varia entre páginas para parecer leitura humana
+    await sleep(humanDelay());
   }
 
   if (total === 0) {
@@ -246,14 +267,32 @@ async function monitorPollProfile(username) {
     const currentUsers = new Map();
     let maxId = null, pollFailed = false;
     for (let pg = 0; pg < monitor.POLL_PAGES; pg++) {
-      const data = await monitorFetchFollowersPage(web, mobile, userId, maxId);
-      if (!data) { pollFailed = true; break; }
+      const { data, status } = await monitorFetchFollowersPage(web, mobile, userId, maxId);
+
+      if (!data) {
+        // 400 = userId inválido — tenta renovar e repetir uma vez
+        if (status === 400) {
+          console.warn(`[monitor] poll @${username}: 400 no userId=${userId} — renovando...`);
+          try {
+            const { userId: freshId } = await getUserId(web, username, mobile);
+            if (freshId && freshId !== userId) {
+              userId = freshId;
+              db.prepare('UPDATE monitor_profiles SET ig_user_id = ? WHERE username = ?').run(freshId, username);
+              console.log(`[monitor] poll @${username}: userId renovado para ${freshId}`);
+              continue; // tenta a mesma página com o novo userId
+            }
+          } catch (refreshErr) { console.warn(`[monitor] renovação userId falhou:`, refreshErr.message); }
+        }
+        pollFailed = true;
+        break;
+      }
+
       const users = data.users || [];
       if (!users.length) break;
       for (const u of users) if (u.pk) currentUsers.set(String(u.pk), u);
       maxId = data.next_max_id || null;
       if (!maxId) break;
-      await sleep(400);
+      await sleep(humanDelay());
     }
 
     if (pollFailed && currentUsers.size === 0) {
@@ -301,9 +340,35 @@ async function monitorPollProfile(username) {
   }
 }
 
+// Valida se a sessão do Instagram ainda está ativa
+async function monitorCheckSession() {
+  const web = monitorAxiosWeb();
+  if (!web) return false;
+  try {
+    const r = await web.get('/api/v1/accounts/current_user/', { params: { edit: false } });
+    if (r.status === 200 && r.data?.user) return true;
+    if (r.status === 401 || r.status === 302) return false;
+    // 429 = sessão ok, só rate limit
+    if (r.status === 429) return true;
+    // Tenta endpoint alternativo
+    const r2 = await web.get('/api/v1/users/web_profile_info/', { params: { username: 'instagram' } });
+    return r2.status === 200;
+  } catch { return false; }
+}
+
 async function monitorRunCycle(manual = false) {
   if (monitor.polling) return;
   monitor.polling = true;
+
+  // Valida sessão antes de qualquer coisa
+  const sessionOk = await monitorCheckSession();
+  if (!sessionOk) {
+    monitor.polling = false;
+    console.warn('[monitor] sessão Instagram inválida ou expirada — pausando ciclo');
+    monitorSend({ type: 'session_expired' });
+    return;
+  }
+
   const profiles = db.prepare('SELECT username FROM monitor_profiles WHERE status != ?').all('paused');
   if (profiles.length > 0) monitorSend({ type: 'cycle_start', manual, profiles: profiles.map(p => p.username) });
   let totalNew = 0;
@@ -312,20 +377,58 @@ async function monitorRunCycle(manual = false) {
     await monitorPollProfile(username);
     const after  = db.prepare('SELECT COUNT(*) as n FROM monitor_events WHERE profile_username = ?').get(username)?.n || 0;
     totalNew += Math.max(0, after - before);
-    await sleep(2000);
+    // Pausa humanizada entre perfis: 3-8 segundos
+    if (profiles.length > 1) await sleep(randInt(3000, 8000));
   }
   monitor.polling = false;
   monitorSend({ type: 'cycle_done', manual, totalNew, profiles: profiles.map(p => p.username) });
+
+  // Agenda próximo ciclo automático (scheduleNext também envia next_check via SSE)
+  if (!manual) monitorScheduleNext();
+}
+
+function monitorScheduleNext() {
+  if (monitor.timer) clearTimeout(monitor.timer);
+
+  const now  = new Date();
+  const hour = now.getHours();
+  let next;
+
+  if (hour >= 23 || hour < 7) {
+    // Fora do horário — agenda para as 7h do próximo dia com jitter de ±15min
+    const tomorrow7h = new Date(now);
+    if (hour >= 23) tomorrow7h.setDate(tomorrow7h.getDate() + 1);
+    tomorrow7h.setHours(7, randInt(0, 15), randInt(0, 59), 0);
+    next = tomorrow7h - now;
+    console.log(`[monitor] fora do horário — retoma às ${tomorrow7h.toLocaleTimeString('pt-BR')}`);
+  } else {
+    next = jitter(monitor.INTERVAL_BASE, 0.25); // 40min ± 25%
+    console.log(`[monitor] próximo ciclo em ${Math.round(next/60000)}min`);
+  }
+
+  monitor.timer = setTimeout(() => {
+    monitor.timer = null;
+    monitorRunCycle(false);
+  }, next);
+
+  // Informa frontend do próximo horário
+  const nextTime = new Date(Date.now() + next);
+  const isNextDay = nextTime.getDate() !== new Date().getDate();
+  const timeStr = nextTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  monitorSend({
+    type: 'next_check',
+    label: isNextDay ? `Retoma amanhã às ${timeStr}` : `Próxima verificação: ${timeStr}`
+  });
 }
 
 function monitorStart() {
   if (monitor.timer) return;
-  monitor.timer = setInterval(monitorRunCycle, monitor.INTERVAL);
-  console.log('[monitor] iniciado — intervalo 10min');
+  monitorScheduleNext();
+  console.log('[monitor] iniciado — modo stealth (30-50min aleatorizado, 7h-23h)');
 }
 
 function monitorStop() {
-  if (monitor.timer) { clearInterval(monitor.timer); monitor.timer = null; }
+  if (monitor.timer) { clearTimeout(monitor.timer); monitor.timer = null; }
 }
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY || '');
@@ -445,6 +548,14 @@ function extractEmail(text) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// Delay humanizado para capturas de lead: base + jitter de ±30%
+// Garante que nenhuma requisição sai em intervalo exato e previsível
+function humanSleep(baseMs) {
+    const min = Math.round(baseMs * 0.7);
+    const max = Math.round(baseMs * 1.4);
+    return sleep(randInt(min, max));
+}
 
 // ============================================
 // Follower Snapshots — comparação para detectar novos seguidores
@@ -757,21 +868,21 @@ app.post('/api/challenge', async (req, res) => {
 });
 
 // ============================================
-// PAYMENT ROUTES — Stripe
-// Instagram: 50 leads = R$10,00
-// Google:    50 leads = R$10,00
+// PAYMENT ROUTES — Stripe (créditos unificados)
+// 50 leads = R$10 | 150 leads = R$25 | 500 leads = R$70
 // ============================================
 const PACKS = {
-    instagram: { credits: 50, price: 1000, name: 'UltraProspec — 50 Leads Instagram',    desc: 'R$0,20 por lead qualificado do Instagram' },
-    google:    { credits: 50, price: 1000, name: 'UltraProspec — 50 Leads Google Maps',  desc: 'R$0,20 por lead empresarial do Google Maps' }
+    pack50:  { credits: 50,  price: 1000, name: 'UltraProspec — 50 Leads',  desc: '50 leads · Instagram ou Google Maps · R$0,20/lead' },
+    pack150: { credits: 150, price: 2500, name: 'UltraProspec — 150 Leads', desc: '150 leads · Instagram ou Google Maps · economia de 16%' },
+    pack500: { credits: 500, price: 7000, name: 'UltraProspec — 500 Leads', desc: '500 leads · Instagram ou Google Maps · economia de 30%' },
 };
 
 app.post('/api/payment/create', async (req, res) => {
     if (!process.env.STRIPE_SECRET_KEY)
         return res.status(500).json({ error: 'STRIPE_SECRET_KEY não configurada no .env' });
 
-    const type = (req.body.type === 'google') ? 'google' : 'instagram';
-    const pack = PACKS[type];
+    const packKey = ['pack50','pack150','pack500'].includes(req.body.pack) ? req.body.pack : 'pack50';
+    const pack    = PACKS[packKey];
     const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
     try {
         const session = await stripe.checkout.sessions.create({
@@ -787,7 +898,7 @@ app.post('/api/payment/create', async (req, res) => {
             mode:        'payment',
             success_url: `${baseUrl}/payment-success.html?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url:  `${baseUrl}/app.html`,
-            metadata:    { credits: String(pack.credits), type }
+            metadata:    { credits: String(pack.credits) }
         });
         res.json({ checkoutUrl: session.url });
     } catch (err) {
@@ -811,9 +922,8 @@ app.get('/api/payment/verify', async (req, res) => {
             return res.json({ approved: false, status: session.payment_status });
 
         req.session.verifiedSessions.push(session_id);
-        const type    = session.metadata?.type || 'instagram';
-        const credits = parseInt(session.metadata?.credits) || PACKS[type]?.credits || 50;
-        res.json({ approved: true, credits, type, amount: session.amount_total / 100 });
+        const credits = parseInt(session.metadata?.credits) || 50;
+        res.json({ approved: true, credits, amount: session.amount_total / 100 });
     } catch (err) {
         console.error('Stripe verify error:', err.message);
         res.status(500).json({ error: 'Erro ao verificar pagamento: ' + err.message });
@@ -903,14 +1013,14 @@ async function autoFillFollowers(web, mobile, userId, username, sentIds, target,
                 if (shouldFetchBio) {
                     const d = await fetchBio(web, mobile, u.pk, u.username);
                     enrichLead(lead, d);
-                    await sleep(delayTime);
+                    await humanSleep(delayTime);
                 }
                 sendLead(lead);
                 filled++;
             }
             maxId = r.data?.next_max_id;
             if (!maxId) break;
-            await sleep(800);
+            await humanSleep(900);
         } catch { break; }
     }
     if (filled > 0) send({ type: 'log', message: `✓ +${filled} seguidores adicionados` });
@@ -926,7 +1036,7 @@ app.get('/api/capture', async (req, res) => {
     const { type='followers', target='', delay:delayMs='1500', fetchBio:fetchBioParam='false', posts='10' } = req.query;
     console.log(`[capture] type=${type} target=${target} fetchBio=${fetchBioParam}`);
     const maxLeads       = 50; // fixo — 1 crédito = 50 leads
-    const delayTime      = Math.max(parseInt(delayMs)||1500, 1000);
+    const delayTime      = Math.max(parseInt(delayMs)||1500, 1500); // mínimo 1.5s para não parecer bot
     const shouldFetchBio = fetchBioParam === 'true';
     const postsCount     = Math.min(parseInt(posts)||10, 30);
 
@@ -963,7 +1073,7 @@ app.get('/api/capture', async (req, res) => {
                 for(const u of users){followerIds.add(String(u.pk));uMap.set(String(u.pk),u);}
                 maxId=r.data?.next_max_id; if(!maxId)break;
                 if(pg%5===0)send({type:'log',message:`Fase 1/3 — ${followerIds.size} seguidores...`});
-                await sleep(1000);
+                await humanSleep(1000);
             }
             send({type:'log',message:`✓ ${followerIds.size} seguidores`});
 
@@ -979,14 +1089,14 @@ app.get('/api/capture', async (req, res) => {
                 const ts=postsList[i].taken_at||0;
                 try{const lr=await web.get(`/api/v1/media/${postsList[i].id}/likers/`);igAssert(lr.data,'likers');for(const u of lr.data?.users||[]){const id=String(u.pk);likerCounts.set(id,(likerCounts.get(id)||0)+1);if(!recentLike.has(id)||ts>recentLike.get(id))recentLike.set(id,ts);if(!uMap.has(id))uMap.set(id,u);}}catch(e){send({type:'log',message:`⚠️ likers post ${i+1}: ${e.message}`});}
                 try{const cr=await web.get(`/api/v1/media/${postsList[i].id}/comments/`);igAssert(cr.data,'comments');for(const c of cr.data?.comments||[]){const u=c.user;if(!u)continue;const id=String(u.pk);commenterCounts.set(id,(commenterCounts.get(id)||0)+1);if(!recentComment.has(id)||ts>recentComment.get(id))recentComment.set(id,ts);if(!uMap.has(id))uMap.set(id,u);}}catch(e){send({type:'log',message:`⚠️ comments post ${i+1}: ${e.message}`});}
-                await sleep(delayTime);
+                await humanSleep(delayTime);
             }
 
             const toEnrich=[...new Set([...commenterCounts.keys(),...[...likerCounts.entries()].filter(([,c])=>c>=2).map(([id])=>id),...[...followerIds].filter(id=>likerCounts.has(id)||commenterCounts.has(id))])].slice(0,400);
             const enriched=new Map();
             if(toEnrich.length){
                 send({type:'log',message:`Enriquecendo ${toEnrich.length} perfis...`});
-                for(let i=0;i<toEnrich.length&&!stopped;i++){const tpk=toEnrich[i];enriched.set(tpk,await fetchBio(web,mobile,tpk,uMap.get(tpk)?.username));if(i%10===0)send({type:'log',message:`Enriquecendo: ${i+1}/${toEnrich.length}...`});await sleep(800);}
+                for(let i=0;i<toEnrich.length&&!stopped;i++){const tpk=toEnrich[i];enriched.set(tpk,await fetchBio(web,mobile,tpk,uMap.get(tpk)?.username));if(i%10===0)send({type:'log',message:`Enriquecendo: ${i+1}/${toEnrich.length}...`});await humanSleep(900);}
             }
 
             const recM=ts=>{if(!ts)return 0;const d=(Date.now()/1000-ts)/86400;return d<=1?2:d<=3?1.6:d<=7?1.3:d<=30?1:d<=90?0.6:0.3;};
@@ -1090,10 +1200,10 @@ app.get('/api/capture', async (req, res) => {
                     if(count>=maxLeads||stopped)break;
                     const lead=buildLead(u,'','',`seguidores @${username}`);
                     lead.isFollower=true;
-                    if(shouldFetchBio){ const d=await fetchBio(web,mobile,u.pk,u.username); enrichLead(lead,d); await sleep(delayTime); }
+                    if(shouldFetchBio){ const d=await fetchBio(web,mobile,u.pk,u.username); enrichLead(lead,d); await humanSleep(delayTime); }
                     sendLead(lead); count++;
                 }
-                maxId=r.data?.next_max_id;if(!maxId)break;await sleep(delayTime);
+                maxId=r.data?.next_max_id;if(!maxId)break;await humanSleep(delayTime);
             }
 
         } else if (type==='likes') {
@@ -1106,7 +1216,7 @@ app.get('/api/capture', async (req, res) => {
                 if(count>=maxLeads||stopped)break;
                 const lead=buildLead(u,'','','curtidores');
                 lead.likeCount=1;
-                if(shouldFetchBio){ const d=await fetchBio(web,mobile,u.pk,u.username); enrichLead(lead,d); await sleep(delayTime); }
+                if(shouldFetchBio){ const d=await fetchBio(web,mobile,u.pk,u.username); enrichLead(lead,d); await humanSleep(delayTime); }
                 sendLead(lead); count++;
             }
 
@@ -1128,11 +1238,11 @@ app.get('/api/capture', async (req, res) => {
                         if(seen.has(String(u.pk)))continue; seen.add(String(u.pk));
                         const lead=buildLead(u,'','',`curtidor @${username}`);
                         lead.likeCount=1;
-                        if(shouldFetchBio){ const d=await fetchBio(web,mobile,u.pk,u.username); enrichLead(lead,d); await sleep(delayTime); }
+                        if(shouldFetchBio){ const d=await fetchBio(web,mobile,u.pk,u.username); enrichLead(lead,d); await humanSleep(delayTime); }
                         sendLead(lead); count++;
                     }
                 }catch(e){send({type:'log',message:`⚠️ Post ${i+1}: ${e.message}`});}
-                await sleep(delayTime);
+                await humanSleep(delayTime);
             }
             // Auto-fill se likers < 50
             if (count < maxLeads && !stopped) {
@@ -1155,10 +1265,10 @@ app.get('/api/capture', async (req, res) => {
                     const u=c.user; if(!u||seen.has(String(u.pk)))continue; seen.add(String(u.pk));
                     const lead=buildLead(u,'','','comentarista');
                     lead.commentCount=1;
-                    if(shouldFetchBio){ const d=await fetchBio(web,mobile,u.pk,u.username); enrichLead(lead,d); await sleep(delayTime); }
+                    if(shouldFetchBio){ const d=await fetchBio(web,mobile,u.pk,u.username); enrichLead(lead,d); await humanSleep(delayTime); }
                     sendLead(lead); count++;
                 }
-                minId=r.data?.next_min_id;if(!minId)break;await sleep(delayTime);
+                minId=r.data?.next_min_id;if(!minId)break;await humanSleep(delayTime);
             }
 
         } else if (type==='hashtag') {
@@ -1182,7 +1292,7 @@ app.get('/api/capture', async (req, res) => {
                         const users=fr.data?.users||[];if(!users.length)break;
                         for(const u of users){const uid=String(u.pk||u.id);if(uid&&!seen.has(uid)){seen.add(uid);allUsers.push(u);}}
                         send({type:'log',message:`Coletando ${ep}: ${allUsers.length}...`});
-                        maxId=fr.data?.next_max_id;if(!maxId)break;await sleep(1000);
+                        maxId=fr.data?.next_max_id;if(!maxId)break;await humanSleep(1000);
                     }catch(e){send({type:'log',message:`⚠️ ${ep}: ${e.message}`});break;}
                 }
             }
@@ -1198,9 +1308,9 @@ app.get('/api/capture', async (req, res) => {
                 sendLead(lead); count++; return true;
             };
             const B=3;
-            for(let i=0;i<quick.length&&count<maxLeads&&!stopped;i+=B){const bt=quick.slice(i,i+B);const bs=await Promise.all(bt.map(u=>fetchBio(web,mobile,String(u.pk||u.id),u.username)));let ok=true;bt.forEach((u,j)=>{if(ok)ok=emit(u,bs[j])!==false;});if(!ok)break;await sleep(800);}
+            for(let i=0;i<quick.length&&count<maxLeads&&!stopped;i+=B){const bt=quick.slice(i,i+B);const bs=await Promise.all(bt.map(u=>fetchBio(web,mobile,String(u.pk||u.id),u.username)));let ok=true;bt.forEach((u,j)=>{if(ok)ok=emit(u,bs[j])!==false;});if(!ok)break;await humanSleep(900);}
             let bc=0;
-            for(let i=0;i<needBio.length&&count<maxLeads&&!stopped;i+=B){const bt=needBio.slice(i,i+B);const bs=await Promise.all(bt.map(u=>fetchBio(web,mobile,String(u.pk||u.id),u.username)));let ok=true;bt.forEach((u,j)=>{if(ok&&matchProf(u,bs[j]))ok=emit(u,bs[j])!==false;});bc+=bt.length;if(!ok)break;if(bc%40===0||i+B>=needBio.length)send({type:'log',message:`Bio: ${bc}/${needBio.length} — ${count} encontrados`});await sleep(800);}
+            for(let i=0;i<needBio.length&&count<maxLeads&&!stopped;i+=B){const bt=needBio.slice(i,i+B);const bs=await Promise.all(bt.map(u=>fetchBio(web,mobile,String(u.pk||u.id),u.username)));let ok=true;bt.forEach((u,j)=>{if(ok&&matchProf(u,bs[j]))ok=emit(u,bs[j])!==false;});bc+=bt.length;if(!ok)break;if(bc%40===0||i+B>=needBio.length)send({type:'log',message:`Bio: ${bc}/${needBio.length} — ${count} encontrados`});await humanSleep(900);}
             // Auto-fill com seguidores se busca retornou menos de 50
             if (count < maxLeads && !stopped) {
                 try {
@@ -1226,7 +1336,7 @@ app.get('/api/capture', async (req, res) => {
                         for(const u of users)fMap.set(String(u.pk),u);
                         maxId=r.data?.next_max_id;if(!maxId)break;
                         send({type:'log',message:`@${uname}: ${fMap.size}...`});
-                        await sleep(1000);
+                        await humanSleep(1000);
                     }
                     sets.push(new Set(fMap.keys()));maps.push(fMap);
                     send({type:'log',message:`@${uname}: ${fMap.size} ✓`});
@@ -1419,7 +1529,7 @@ app.get('/api/gmaps/search', async (req, res) => {
         // Fechar banner de cookies se aparecer
         try {
             const consentBtn = await page.$('form[action*="consent"] button:last-of-type');
-            if (consentBtn) { await consentBtn.click(); await sleep(1000); }
+            if (consentBtn) { await consentBtn.click(); await humanSleep(1000); }
         } catch {}
 
         // Aguardar feed de resultados
@@ -1485,7 +1595,7 @@ app.get('/api/gmaps/search', async (req, res) => {
             try {
                 await page.goto(placeUrls[i], { waitUntil: 'domcontentloaded', timeout: 20000 });
                 await page.waitForSelector('h1', { timeout: 8000 }).catch(() => {});
-                await sleep(800); // deixar JS da página terminar de renderizar
+                await humanSleep(900); // deixar JS da página terminar de renderizar
 
                 const details = await extractPlaceDetails(page);
                 if (!details || !details.name) continue;
@@ -1732,8 +1842,22 @@ app.post('/api/monitor/add', async (req, res) => {
     const raw = (req.body.username || '').trim().replace('@', '').replace(/.*instagram\.com\//, '').replace(/\/.*/, '');
     if (!raw) return res.status(400).json({ error: 'Username inválido' });
 
-    const existing = db.prepare('SELECT username FROM monitor_profiles WHERE username = ?').get(raw);
-    if (existing) return res.status(400).json({ error: `@${raw} já está sendo monitorado` });
+    // Limite máximo de 3 perfis monitorados
+    const totalProfiles = db.prepare('SELECT COUNT(*) as n FROM monitor_profiles').get()?.n || 0;
+    const existing      = db.prepare('SELECT username FROM monitor_profiles WHERE username = ?').get(raw);
+    const isReAdd       = existing && (existing.status === 'error' || existing.status === 'syncing');
+    if (!isReAdd && totalProfiles >= 3)
+        return res.status(400).json({ error: 'Limite de 3 perfis monitorados atingido. Remova um perfil para adicionar outro.' });
+    if (existing) {
+        // Permite re-adicionar se estava em erro ou sync interrompido — limpa e recomeça
+        if (existing.status === 'error' || existing.status === 'syncing') {
+            db.prepare('DELETE FROM monitor_profiles  WHERE username = ?').run(raw);
+            db.prepare('DELETE FROM profile_followers WHERE profile_username = ?').run(raw);
+            console.log(`[monitor] re-adicionando @${raw} (era status=${existing.status})`);
+        } else {
+            return res.status(400).json({ error: `@${raw} já está sendo monitorado` });
+        }
+    }
 
     db.prepare('INSERT INTO monitor_profiles (username, added_at, status) VALUES (?, ?, ?)').run(raw, new Date().toISOString(), 'pending');
     monitorStart(); // garante que o timer está rodando

@@ -40,17 +40,11 @@
         </button>
 
         <div class="header-actions">
-            <!-- Créditos Instagram -->
-            <div class="credits-display" id="creditsDisplayIG" style="display:none" title="Créditos Instagram">
-                <span class="credits-icon"><i class="fab fa-instagram" style="font-size:.8rem"></i></span>
-                <span id="creditsCountIG">0</span>
-                <span class="credits-label">IG</span>
-            </div>
-            <!-- Créditos Google Maps -->
-            <div class="credits-display" id="creditsDisplayGoogle" style="display:none" title="Créditos Google Maps">
-                <span class="credits-icon"><i class="fab fa-google" style="font-size:.8rem"></i></span>
-                <span id="creditsCountGoogle">0</span>
-                <span class="credits-label">Maps</span>
+            <!-- Créditos (pool unificado) -->
+            <div class="credits-display" id="creditsDisplay" style="display:none" title="Créditos disponíveis">
+                <span class="credits-icon"><i class="fas fa-coins" style="font-size:.8rem"></i></span>
+                <span id="creditsCount">0</span>
+                <span class="credits-label">créditos</span>
             </div>
             <button class="btn btn-success btn-sm" id="btnBuyCredits" onclick="openBuyModal()" style="display:none">
                 + Comprar Leads
@@ -95,7 +89,7 @@
                         <h3 style="margin:0"><i class="fas fa-satellite-dish"></i> Monitor de Novos Seguidores</h3>
                         <span id="monitorStatusBadge" class="monitor-badge monitor-off">Parado</span>
                     </div>
-                    <p style="font-size:.75rem;color:var(--gray);margin:0 0 .75rem">Detecta novos seguidores automaticamente a cada 10 min e envia notificação.</p>
+                    <p style="font-size:.75rem;color:var(--gray);margin:0 0 .5rem">Detecta novos seguidores automaticamente a cada 30–50 min e envia notificação. Ativo entre <strong style="color:var(--text)">7h–23h</strong> para evitar bloqueios. Limite de <strong style="color:var(--text)">3 perfis</strong>.</p>
                     <div style="display:flex;gap:.5rem;margin-bottom:.75rem">
                         <input type="text" id="monitorInput" placeholder="@concorrente" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.5rem .75rem;color:#fff;font-size:.85rem;outline:none">
                         <button onclick="monitorAddProfile()" class="btn-primary" style="padding:.5rem .9rem;font-size:.85rem;white-space:nowrap"><i class="fas fa-plus"></i></button>
@@ -109,6 +103,7 @@
                             <i class="fas fa-bell"></i> Ativar notificações
                         </button>
                     </div>
+                    <p id="monitorNextCheck" style="margin:.4rem 0 0;font-size:.7rem;color:var(--gray);text-align:center;display:none"></p>
                 </div>
                 <div class="sidebar-section" id="monitorFeedSection" style="display:none">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
@@ -753,7 +748,7 @@
                         </div>
                         <div style="display:flex;gap:.7rem;align-items:flex-start">
                             <i class="fas fa-clock" style="color:var(--primary);margin-top:.15rem;flex-shrink:0"></i>
-                            <span style="font-size:.85rem">O sistema verifica automaticamente a cada <strong>10 minutos</strong>, mesmo com o app em background.</span>
+                            <span style="font-size:.85rem">Verifica a cada <strong>30–50 min</strong> entre <strong>7h e 23h</strong> com intervalos aleatórios — imita comportamento humano para proteger sua conta.</span>
                         </div>
                         <div style="display:flex;gap:.7rem;align-items:flex-start">
                             <i class="fas fa-user-plus" style="color:var(--primary);margin-top:.15rem;flex-shrink:0"></i>
@@ -761,7 +756,7 @@
                         </div>
                         <div style="display:flex;gap:.7rem;align-items:flex-start">
                             <i class="fas fa-database" style="color:var(--primary);margin-top:.15rem;flex-shrink:0"></i>
-                            <span style="font-size:.85rem">Dados salvos <strong>localmente</strong> — sem banco externo. Funciona local e no Railway.</span>
+                            <span style="font-size:.85rem">Dados salvos <strong>localmente</strong> — funciona local e no Railway. Limite de <strong>3 perfis</strong> monitorados simultaneamente.</span>
                         </div>
                     </div>
                     <button onclick="mwGoToMonitor()" class="btn-primary" style="padding:.85rem;font-size:.95rem;font-weight:700">
@@ -1016,18 +1011,22 @@
                 </div>
                 <!-- Sem créditos -->
                 <div id="mwIGNoCredits">
-                    <div class="mw-buy-pack">
-                        <i class="fab fa-instagram mw-buy-pack-icon"></i>
-                        <div class="mw-buy-pack-info">
-                            <strong>50 leads Instagram</strong>
-                            <small>WhatsApp · Email · Score · Qualificação</small>
+                    <p style="font-size:.78rem;color:var(--gray);margin:0 0 .75rem;text-align:center">Créditos funcionam para Instagram, Google Maps e Monitor</p>
+                    <div style="display:flex;flex-direction:column;gap:.5rem;margin-bottom:1rem">
+                        <div style="display:flex;align-items:center;gap:.75rem;background:var(--surface2);border-radius:10px;padding:.7rem .9rem;cursor:pointer;border:2px solid var(--primary)" onclick="selectPack('pack50'); mwBuyCreditsIG()">
+                            <div style="flex:1"><div style="font-weight:700;font-size:.88rem">50 créditos</div><div style="font-size:.72rem;color:var(--gray)">R$0,20 por lead</div></div>
+                            <div style="font-weight:900;color:var(--primary)">R$10</div>
                         </div>
-                        <span class="mw-buy-pack-price">R$10</span>
+                        <div style="display:flex;align-items:center;gap:.75rem;background:var(--surface2);border-radius:10px;padding:.7rem .9rem;cursor:pointer;border:2px solid transparent" onclick="selectPack('pack150'); mwBuyCreditsIG()">
+                            <div style="flex:1"><div style="font-weight:700;font-size:.88rem">150 créditos <span style="background:#f39c12;color:#000;font-size:.6rem;padding:.1rem .35rem;border-radius:4px">-16%</span></div><div style="font-size:.72rem;color:var(--gray)">R$0,17 por lead</div></div>
+                            <div style="font-weight:900;color:var(--primary)">R$25</div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:.75rem;background:var(--surface2);border-radius:10px;padding:.7rem .9rem;cursor:pointer;border:2px solid transparent" onclick="selectPack('pack500'); mwBuyCreditsIG()">
+                            <div style="flex:1"><div style="font-weight:700;font-size:.88rem">500 créditos <span style="background:#27ae60;color:#fff;font-size:.6rem;padding:.1rem .35rem;border-radius:4px">-30%</span></div><div style="font-size:.72rem;color:var(--gray)">R$0,14 por lead</div></div>
+                            <div style="font-weight:900;color:var(--primary)">R$70</div>
+                        </div>
                     </div>
-                    <button class="mw-btn-next execute" style="width:100%;margin-top:1rem" onclick="mwBuyCreditsIG()">
-                        <i class="fas fa-credit-card"></i> Comprar créditos — R$10,00
-                    </button>
-                    <p class="mw-hint" style="text-align:center;margin-top:.625rem">Pagamento seguro via Stripe</p>
+                    <p class="mw-hint" style="text-align:center">Pagamento seguro via Stripe</p>
                 </div>
                 <!-- Com créditos -->
                 <div id="mwIGHasCredits" style="display:none">
@@ -1187,18 +1186,22 @@
                     <p>Verifique seus créditos antes de continuar</p>
                 </div>
                 <div id="mwGoogleNoCredits">
-                    <div class="mw-buy-pack">
-                        <i class="fab fa-google mw-buy-pack-icon"></i>
-                        <div class="mw-buy-pack-info">
-                            <strong>50 leads Google Maps</strong>
-                            <small>Nome · Telefone · Endereço · Site</small>
+                    <p style="font-size:.78rem;color:var(--gray);margin:0 0 .75rem;text-align:center">Créditos funcionam para Instagram, Google Maps e Monitor</p>
+                    <div style="display:flex;flex-direction:column;gap:.5rem;margin-bottom:1rem">
+                        <div style="display:flex;align-items:center;gap:.75rem;background:var(--surface2);border-radius:10px;padding:.7rem .9rem;cursor:pointer;border:2px solid var(--primary)" onclick="selectPack('pack50'); mwBuyCreditsGoogle()">
+                            <div style="flex:1"><div style="font-weight:700;font-size:.88rem">50 créditos</div><div style="font-size:.72rem;color:var(--gray)">R$0,20 por lead</div></div>
+                            <div style="font-weight:900;color:var(--primary)">R$10</div>
                         </div>
-                        <span class="mw-buy-pack-price">R$10</span>
+                        <div style="display:flex;align-items:center;gap:.75rem;background:var(--surface2);border-radius:10px;padding:.7rem .9rem;cursor:pointer;border:2px solid transparent" onclick="selectPack('pack150'); mwBuyCreditsGoogle()">
+                            <div style="flex:1"><div style="font-weight:700;font-size:.88rem">150 créditos <span style="background:#f39c12;color:#000;font-size:.6rem;padding:.1rem .35rem;border-radius:4px">-16%</span></div><div style="font-size:.72rem;color:var(--gray)">R$0,17 por lead</div></div>
+                            <div style="font-weight:900;color:var(--primary)">R$25</div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:.75rem;background:var(--surface2);border-radius:10px;padding:.7rem .9rem;cursor:pointer;border:2px solid transparent" onclick="selectPack('pack500'); mwBuyCreditsGoogle()">
+                            <div style="flex:1"><div style="font-weight:700;font-size:.88rem">500 créditos <span style="background:#27ae60;color:#fff;font-size:.6rem;padding:.1rem .35rem;border-radius:4px">-30%</span></div><div style="font-size:.72rem;color:var(--gray)">R$0,14 por lead</div></div>
+                            <div style="font-weight:900;color:var(--primary)">R$70</div>
+                        </div>
                     </div>
-                    <button class="mw-btn-next execute" style="width:100%;margin-top:1rem" onclick="mwBuyCreditsGoogle()">
-                        <i class="fas fa-credit-card"></i> Comprar créditos — R$10,00
-                    </button>
-                    <p class="mw-hint" style="text-align:center;margin-top:.625rem">Pagamento seguro via Stripe</p>
+                    <p class="mw-hint" style="text-align:center">Pagamento seguro via Stripe</p>
                 </div>
                 <div id="mwGoogleHasCredits" style="display:none">
                     <div class="mw-cred-ok">
@@ -1260,21 +1263,12 @@
                 </p>
                 <div class="mw-menu-credits">
                     <div class="mw-menu-credit-item">
-                        <div class="mw-menu-credit-icon ig">
-                            <i class="fab fa-instagram"></i>
+                        <div class="mw-menu-credit-icon" style="background:rgba(0,200,83,.15)">
+                            <i class="fas fa-coins" style="color:var(--primary)"></i>
                         </div>
                         <div>
-                            <strong id="mwMenuCredIG">0</strong>
-                            <small>créditos Instagram</small>
-                        </div>
-                    </div>
-                    <div class="mw-menu-credit-item">
-                        <div class="mw-menu-credit-icon google">
-                            <i class="fab fa-google"></i>
-                        </div>
-                        <div>
-                            <strong id="mwMenuCredGoogle">0</strong>
-                            <small>créditos Google Maps</small>
+                            <strong id="mwMenuCredTotal">0</strong>
+                            <small>créditos · Instagram, Google Maps e Monitor</small>
                         </div>
                     </div>
                 </div>
@@ -1283,19 +1277,13 @@
             <!-- Info sobre persistência -->
             <div class="mw-menu-info-box">
                 <i class="fas fa-shield-check"></i>
-                <p>Seus créditos ficam <strong>salvos automaticamente</strong> — mesmo se você fechar o app, eles continuam disponíveis quando voltar.</p>
+                <p>Seus créditos ficam <strong>salvos automaticamente</strong> e funcionam para qualquer tipo de captura. Não expiram.</p>
             </div>
 
-            <!-- Regra de sessão -->
-            <div class="mw-menu-info-box mw-menu-info-rule">
-                <i class="fas fa-info-circle"></i>
-                <p>Você só pode comprar mais créditos após <strong>usar todos os disponíveis</strong>. Cada compra gera 50 leads.</p>
-            </div>
-
-            <!-- Comprar créditos (só aparece quando zerado) -->
-            <div id="mwMenuBuySection" style="display:none">
+            <!-- Comprar créditos -->
+            <div id="mwMenuBuySection">
                 <button class="mw-menu-buy-btn" onclick="mwCloseMenu(); openBuyModal();">
-                    <i class="fas fa-credit-card"></i> Comprar créditos — R$10,00
+                    <i class="fas fa-credit-card"></i> Comprar créditos
                 </button>
             </div>
 
@@ -1604,36 +1592,42 @@
 
 <!-- ── MODAL: Comprar Leads ── -->
 <div class="modal" id="buyModal">
-    <div class="modal-content" style="max-width:520px">
+    <div class="modal-content" style="max-width:480px">
         <div class="modal-header">
-            <h2>⚡ Escolha seu pacote de leads</h2>
+            <h2><i class="fas fa-coins"></i> Comprar créditos</h2>
             <button class="modal-close" onclick="closeBuyModal()">&times;</button>
         </div>
-        <div class="modal-body" style="padding:1.5rem">
-            <!-- Seleção de pacote -->
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem">
-                <!-- Pack Instagram -->
-                <div class="buy-pack" id="packIG" onclick="selectPack('instagram')" style="border:2px solid var(--primary);border-radius:12px;padding:1.25rem;cursor:pointer;text-align:center;background:rgba(0,200,83,.06)">
-                    <div style="font-size:1.6rem;margin-bottom:.4rem"><i class="fab fa-instagram"></i></div>
-                    <div style="font-weight:700;font-size:.95rem;margin-bottom:.2rem">Instagram</div>
-                    <div style="font-size:2rem;font-weight:900;color:var(--primary)">R$10</div>
-                    <div style="font-size:1.1rem;font-weight:700;color:rgba(255,255,255,.8)">50 leads</div>
-                    <div style="font-size:.75rem;color:rgba(255,255,255,.75);margin-top:.3rem">WhatsApp · Email · Score</div>
+        <div class="modal-body" style="padding:1.25rem 1.5rem">
+            <p style="font-size:.8rem;color:var(--gray);margin:0 0 1rem">Créditos funcionam para Instagram, Google Maps e Monitor. Não expiram.</p>
+            <!-- 3 packs -->
+            <div style="display:flex;flex-direction:column;gap:.65rem;margin-bottom:1rem">
+                <div class="buy-pack" id="pack50" onclick="selectPack('pack50')" style="border:2px solid var(--primary);border-radius:12px;padding:.9rem 1.1rem;cursor:pointer;display:flex;align-items:center;gap:.9rem;background:rgba(0,200,83,.06)">
+                    <div style="flex:1">
+                        <div style="font-weight:700;font-size:.95rem">50 créditos</div>
+                        <div style="font-size:.75rem;color:var(--gray)">R$0,20 por lead</div>
+                    </div>
+                    <div style="font-size:1.4rem;font-weight:900;color:var(--primary)">R$10</div>
                 </div>
-                <!-- Pack Google Maps -->
-                <div class="buy-pack" id="packGoogle" onclick="selectPack('google')" style="border:2px solid transparent;border-radius:12px;padding:1.25rem;cursor:pointer;text-align:center;background:rgba(255,255,255,.04)">
-                    <div style="font-size:1.6rem;margin-bottom:.4rem"><i class="fab fa-google"></i></div>
-                    <div style="font-weight:700;font-size:.95rem;margin-bottom:.2rem">Google Maps</div>
-                    <div style="font-size:2rem;font-weight:900;color:var(--primary)">R$10</div>
-                    <div style="font-size:1.1rem;font-weight:700;color:rgba(255,255,255,.8)">50 leads</div>
-                    <div style="font-size:.75rem;color:rgba(255,255,255,.75);margin-top:.3rem">Nome · Telefone · Endereço · Site</div>
+                <div class="buy-pack" id="pack150" onclick="selectPack('pack150')" style="border:2px solid transparent;border-radius:12px;padding:.9rem 1.1rem;cursor:pointer;display:flex;align-items:center;gap:.9rem;background:rgba(255,255,255,.04)">
+                    <div style="flex:1">
+                        <div style="font-weight:700;font-size:.95rem">150 créditos <span style="background:#f39c12;color:#000;font-size:.65rem;padding:.1rem .4rem;border-radius:4px;margin-left:.3rem">-16%</span></div>
+                        <div style="font-size:.75rem;color:var(--gray)">R$0,17 por lead</div>
+                    </div>
+                    <div style="font-size:1.4rem;font-weight:900;color:var(--primary)">R$25</div>
+                </div>
+                <div class="buy-pack" id="pack500" onclick="selectPack('pack500')" style="border:2px solid transparent;border-radius:12px;padding:.9rem 1.1rem;cursor:pointer;display:flex;align-items:center;gap:.9rem;background:rgba(255,255,255,.04)">
+                    <div style="flex:1">
+                        <div style="font-weight:700;font-size:.95rem">500 créditos <span style="background:#27ae60;color:#fff;font-size:.65rem;padding:.1rem .4rem;border-radius:4px;margin-left:.3rem">-30%</span></div>
+                        <div style="font-size:.75rem;color:var(--gray)">R$0,14 por lead</div>
+                    </div>
+                    <div style="font-size:1.4rem;font-weight:900;color:var(--primary)">R$70</div>
                 </div>
             </div>
             <p id="buyError" style="display:none;color:#ff6b6b;font-size:.83rem;margin-bottom:.75rem"></p>
         </div>
         <div class="modal-footer" style="flex-direction:column;gap:.75rem">
             <button class="btn btn-success btn-block" id="btnCheckout" onclick="goToCheckout()" style="justify-content:center;font-size:1rem;padding:.85rem">
-                <i class="fas fa-credit-card"></i> Pagar R$10 com Stripe
+                <i class="fas fa-credit-card"></i> Pagar com Stripe
             </button>
             <button class="btn btn-outline btn-block" onclick="closeBuyModal()" style="justify-content:center">Cancelar</button>
             <button onclick="simulatePayment()" style="background:none;border:none;color:rgba(255,255,255,.85);font-size:.72rem;cursor:pointer;padding:.25rem;font-family:inherit">
@@ -1677,7 +1671,7 @@
     <div style="flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:1rem">
         <!-- Adicionar perfil -->
         <div style="background:var(--surface2);border-radius:12px;padding:1rem">
-            <p style="font-size:.8rem;color:var(--gray);margin:0 0 .75rem">Detecta novos seguidores a cada 10 min e envia notificação.</p>
+            <p style="font-size:.8rem;color:var(--gray);margin:0 0 .75rem">Detecta novos seguidores a cada 30–50 min e envia notificação. Ativo entre <strong style="color:var(--text)">7h–23h</strong> · máx. <strong style="color:var(--text)">3 perfis</strong>.</p>
             <div style="display:flex;gap:.5rem">
                 <input type="text" id="monitorInputMobile" placeholder="@concorrente" style="flex:1;background:var(--surface3);border:1px solid var(--border);border-radius:8px;padding:.55rem .75rem;color:#fff;font-size:.9rem;outline:none">
                 <button onclick="monitorAddProfileMobile()" class="btn-primary" style="padding:.55rem 1rem;font-size:.9rem"><i class="fas fa-plus"></i></button>
@@ -1690,6 +1684,7 @@
                     <i class="fas fa-bell"></i> Notificações
                 </button>
             </div>
+            <p id="monitorNextCheckMobile" style="margin:.4rem 0 0;font-size:.7rem;color:var(--gray);text-align:center;display:none"></p>
         </div>
         <!-- Lista de perfis -->
         <div id="monitorProfileListMobile" style="display:flex;flex-direction:column;gap:.4rem"></div>

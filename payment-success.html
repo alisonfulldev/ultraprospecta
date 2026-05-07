@@ -35,10 +35,10 @@ var params    = new URLSearchParams(window.location.search);
 var sessionId = params.get('session_id');
 var credits   = parseInt(params.get('credits') || '0'); // fallback da URL
 
-function addToLocalStorage(n, type) {
-  var key = (type === 'cnpj') ? 'up_credits_cnpj' : 'up_credits_ig';
-  var current = parseInt(localStorage.getItem(key) || '0');
-  localStorage.setItem(key, String(current + n));
+function addToLocalStorage(n) {
+  var current = parseInt(localStorage.getItem('up_credits') || '0');
+  localStorage.setItem('up_credits', String(current + n));
+  localStorage.setItem('up_credits_unified', '1');
   localStorage.setItem('up_ever_had_credits', '1');
 }
 
@@ -72,8 +72,8 @@ async function verify() {
     var data = await res.json();
 
     if (data.approved) {
-      var n = data.credits || 100;
-      addToLocalStorage(n, data.type);
+      var n = data.credits || 50;
+      addToLocalStorage(n);
       showSuccess(n);
     } else if (data.alreadyUsed) {
       // Já foi verificado nesta sessão — considera OK (usuário recarregou a página)

@@ -1,28 +1,29 @@
 // UltraProspec - App JS
 
 // ============================================
-// Créditos — separados por fonte (localStorage)
+// Créditos — pool unificado (localStorage)
 // ============================================
-const CREDITS_KEY_IG     = 'up_credits_ig';
-const CREDITS_KEY_GOOGLE = 'up_credits_google';
+const CREDITS_KEY = 'up_credits';
 
-// Migração do sistema antigo (chave única → por fonte)
+// Migração: soma créditos IG + Google em pool único
 (function migrateLegacyCredits() {
-    const old = localStorage.getItem('up_credits');
-    if (old !== null && !localStorage.getItem('up_credits_migrated')) {
-        const n = parseInt(old) || 0;
-        if (n > 0) localStorage.setItem(CREDITS_KEY_IG, String(n));
-        localStorage.removeItem('up_credits');
-        localStorage.setItem('up_credits_migrated', '1');
-    }
+    if (localStorage.getItem('up_credits_unified')) return;
+    const old   = parseInt(localStorage.getItem('up_credits')    || '0');
+    const oldIg = parseInt(localStorage.getItem('up_credits_ig') || '0');
+    const oldGg = parseInt(localStorage.getItem('up_credits_google') || '0');
+    const total = old + oldIg + oldGg;
+    if (total > 0) localStorage.setItem(CREDITS_KEY, String(total));
+    localStorage.setItem('up_credits_unified', '1');
 })();
 
-function getCreditsIG()     { return parseInt(localStorage.getItem(CREDITS_KEY_IG)     || '0'); }
-function getCreditsGoogle() { return parseInt(localStorage.getItem(CREDITS_KEY_GOOGLE) || '0'); }
-function getActiveCredits() { return state.activeSource === 'google' ? getCreditsGoogle() : getCreditsIG(); }
+function getCredits()      { return parseInt(localStorage.getItem(CREDITS_KEY) || '0'); }
+// Aliases para compatibilidade com código legado
+function getCreditsIG()     { return getCredits(); }
+function getCreditsGoogle() { return getCredits(); }
+function getActiveCredits() { return getCredits(); }
 
 const FREE_TRIAL_LEADS = 4;
-function isFreeTrial()  { return getActiveCredits() <= 0; }
+function isFreeTrial()  { return getCredits() <= 0; }
 
 function showFreeTrialBanner() {
     const el = document.getElementById('freeTrialBanner');
@@ -49,63 +50,43 @@ function commitFreeTrialLeads() {
     showFreeTrialBanner();
 }
 
-function setCreditsIG(n)     { localStorage.setItem(CREDITS_KEY_IG,     String(Math.max(0, n))); updateCreditsUI(); }
-function setCreditsGoogle(n) { localStorage.setItem(CREDITS_KEY_GOOGLE, String(Math.max(0, n))); updateCreditsUI(); }
-function deductCredit()    {
-    if (state.activeSource === 'google') setCreditsGoogle(getCreditsGoogle() - 1);
-    else setCreditsIG(getCreditsIG() - 1);
-}
-function addCredits(n, type) {
-    const t = type || state.activeSource || 'instagram';
-    if (t === 'google') {
-        setCreditsGoogle(getCreditsGoogle() + n);
-    } else {
-        const wasZero = getCreditsIG() === 0;
-        setCreditsIG(getCreditsIG() + n);
-        if (wasZero && !localStorage.getItem('up_warned')) {
-            localStorage.setItem('up_warned', '1');
-            setTimeout(() => showToast(
-                '💡 Dica: faça capturas com calma — o Instagram pode limitar perfis com muitas requisições seguidas.',
-                'warning', 9000
-            ), 600);
-        }
+function setCredits(n)       { localStorage.setItem(CREDITS_KEY, String(Math.max(0, n))); updateCreditsUI(); }
+function setCreditsIG(n)     { setCredits(n); }
+function setCreditsGoogle(n) { setCredits(n); }
+function deductCredit()      { setCredits(getCredits() - 1); }
+function addCredits(n) {
+    const wasZero = getCredits() === 0;
+    setCredits(getCredits() + n);
+    if (wasZero && !localStorage.getItem('up_warned')) {
+        localStorage.setItem('up_warned', '1');
+        setTimeout(() => showToast(
+            'Dica: faça capturas com calma — o Instagram pode limitar requisições seguidas.',
+            'warning', 9000
+        ), 600);
     }
     hideFreeTrialBanner();
     // Após compra: re-executa o step de créditos do wizard para auto-avançar
     setTimeout(() => {
-        if (mwState.currentStep === 'ig_credits'     && t !== 'google') mwSetupCreditsStep('ig');
-        if (mwState.currentStep === 'google_credits' && t === 'google') mwSetupCreditsStep('google');
+        if (mwState.currentStep === 'ig_credits')     mwSetupCreditsStep('ig');
+        if (mwState.currentStep === 'google_credits') mwSetupCreditsStep('google');
     }, 350);
 }
 
 function updateCreditsUI() {
-    const ig     = getCreditsIG();
-    const google = getCreditsGoogle();
+    const n = getCredits();
 
-    const elIG     = document.getElementById('creditsCountIG');
-    const elGoogle = document.getElementById('creditsCountGoogle');
-    const dispIG     = document.getElementById('creditsDisplayIG');
-    const dispGoogle = document.getElementById('creditsDisplayGoogle');
-    const buyBtn     = document.getElementById('btnBuyCredits');
-
-    if (elIG)     elIG.textContent     = ig;
-    if (elGoogle) elGoogle.textContent = google;
-
-    if (dispIG) {
-        dispIG.style.display = 'flex';
-        dispIG.classList.toggle('credits-low',   ig > 0 && ig <= 10);
-        dispIG.classList.toggle('credits-empty', ig <= 0);
+    // Desktop header
+    const dispEl  = document.getElementById('creditsDisplay');
+    const countEl = document.getElementById('creditsCount');
+    if (countEl) countEl.textContent = n;
+    if (dispEl) {
+        dispEl.style.display = 'flex';
+        dispEl.classList.toggle('credits-low',   n > 0 && n <= 10);
+        dispEl.classList.toggle('credits-empty', n <= 0);
     }
-    if (dispGoogle) {
-        dispGoogle.style.display = google > 0 ? 'flex' : 'none';
-        dispGoogle.classList.toggle('credits-low', google > 0 && google <= 10);
-    }
-    if (buyBtn) {
-        buyBtn.style.display = 'inline-flex';
-        buyBtn.disabled = false;
-        buyBtn.style.opacity = '';
-        buyBtn.title = '';
-    }
+    // Botão comprar (sempre visível)
+    const buyBtn = document.getElementById('btnBuyCredits');
+    if (buyBtn) { buyBtn.style.display = 'inline-flex'; buyBtn.disabled = false; }
 }
 
 // ============================================
@@ -129,7 +110,7 @@ const state = {
     segmentActive: false,
     segmentReachable: false,
     activeSource: 'instagram', // 'instagram' | 'google'
-    selectedPackType: 'instagram',
+    selectedPackKey: 'pack50',
     pendingLeads: [],
     duplicatesSkipped: 0,
     flowMode: 'auto',          // 'auto' | 'advanced'
@@ -258,8 +239,8 @@ function setSource(source) {
         </div></td></tr>`;
     updateCounts();
 
-    // Pré-seleciona pack no modal
-    state.selectedPackType = source === 'google' ? 'google' : 'instagram';
+    // Abre modal com pack50 selecionado por padrão
+    state.selectedPackKey = 'pack50';
 }
 
 // ============================================
@@ -513,12 +494,11 @@ function toggleAIConfig(source) {
 
 
 function openBuyModal() {
-    const type  = state.activeSource === 'google' ? 'google' : 'instagram';
     const errEl = document.getElementById('buyError');
     const btn   = document.getElementById('btnCheckout');
 
-    errEl.style.display = 'none';
-    selectPack(type);
+    if (errEl) errEl.style.display = 'none';
+    selectPack(state.selectedPackKey || 'pack50');
     if (btn) { btn.disabled = false; btn.style.opacity = ''; }
 
     document.getElementById('buyModal').classList.add('active');
@@ -528,34 +508,35 @@ function closeBuyModal() {
     document.getElementById('buyModal').classList.remove('active');
 }
 
-function selectPack(type) {
-    state.selectedPackType = type;
-    const packIG     = document.getElementById('packIG');
-    const packGoogle = document.getElementById('packGoogle');
-    if (packIG && packGoogle) {
-        packIG.style.border       = type === 'instagram' ? '2px solid var(--primary)' : '2px solid transparent';
-        packIG.style.background   = type === 'instagram' ? 'rgba(0,200,83,.06)' : 'rgba(255,255,255,.04)';
-        packGoogle.style.border   = type === 'google'    ? '2px solid var(--primary)' : '2px solid transparent';
-        packGoogle.style.background = type === 'google'  ? 'rgba(0,200,83,.06)' : 'rgba(255,255,255,.04)';
-    }
+function selectPack(packKey) {
+    state.selectedPackKey = packKey;
+    ['pack50','pack150','pack500'].forEach(k => {
+        const el = document.getElementById(k);
+        if (!el) return;
+        const active = k === packKey;
+        el.style.border     = active ? '2px solid var(--primary)' : '2px solid transparent';
+        el.style.background = active ? 'rgba(0,200,83,.06)' : 'rgba(255,255,255,.04)';
+    });
 }
 
+const PACK_CREDITS = { pack50: 50, pack150: 150, pack500: 500 };
+
 function simulatePayment() {
-    const type = state.selectedPackType || 'instagram';
-    const n = 50;
-    addCredits(n, type);
+    const key = state.selectedPackKey || 'pack50';
+    const n   = PACK_CREDITS[key] || 50;
+    addCredits(n);
     closeBuyModal();
-    showToast(n + ' leads ' + (type === 'google' ? 'Google Maps' : 'Instagram') + ' adicionados (modo teste)', 'success');
+    showToast(n + ' créditos adicionados (modo teste)', 'success');
 }
 
 async function goToCheckout() {
-    const type = state.selectedPackType || 'instagram';
+    const pack = state.selectedPackKey || 'pack50';
     const btn  = document.getElementById('btnCheckout');
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Aguarde...';
     document.getElementById('buyError').style.display = 'none';
     try {
-        const res  = await fetch('/api/payment/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type }) });
+        const res  = await fetch('/api/payment/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pack }) });
         const data = await res.json();
         if (data.checkoutUrl) {
             window.location.href = data.checkoutUrl;
@@ -717,6 +698,8 @@ function updateLoginUI(loggedIn, user) {
     const prompt  = document.getElementById('igLoginPrompt');
 
     if (loggedIn && user) {
+        // Remove alerta de sessão expirada se existir
+        document.getElementById('monitorSessionAlert')?.remove();
         dot.className    = 'status-dot online';
         text.textContent = `@${user.username}`;
         btn.innerHTML    = '<i class="fas fa-sign-out-alt"></i> Sair';
@@ -1214,7 +1197,7 @@ function approveLeadPreview() {
     if (leftOver > 0) msg += ` (${leftOver} descartado${leftOver !== 1 ? 's' : ''} por falta de créditos)`;
     finishCapture(msg, 'success');
     updateCreditsUI();
-    if (getCreditsIG() <= 0) setTimeout(() => openBuyModal(), 800);
+    if (getCredits() <= 0) setTimeout(() => openBuyModal(), 800);
 }
 
 function rejectLeadPreview() {
@@ -1360,7 +1343,7 @@ function startCaptureGoogle() {
                 } else {
                     finishCapture(`${state.leads.length} leads Google Maps rankeados por segmento`, 'success');
                     updateCreditsUI();
-                    if (getCreditsGoogle() <= 0) setTimeout(() => openBuyModal(), 800);
+                    if (getCredits() <= 0) setTimeout(() => openBuyModal(), 800);
                 }
             } else {
                 setProgress(100, `${state.leads.length} empresas encontradas`);
@@ -2529,71 +2512,49 @@ function mwValidate(step) {
         if (!kw) { showToast('Informe a palavra-chave de busca', 'error'); return false; }
     }
     if (step === 'ig_credits') {
-        if (getCreditsIG() <= 0) { showToast('Adquira créditos para continuar', 'warning'); return false; }
+        if (getCredits() <= 0) { showToast('Adquira créditos para continuar', 'warning'); return false; }
     }
     if (step === 'ig_login') {
         if (!loadIgSession()?.loggedIn) { showToast('Conecte sua conta do Instagram para continuar', 'warning'); return false; }
     }
     if (step === 'google_credits') {
-        if (getCreditsGoogle() <= 0) { showToast('Adquira créditos para continuar', 'warning'); return false; }
+        if (getCredits() <= 0) { showToast('Adquira créditos para continuar', 'warning'); return false; }
     }
     return true;
 }
 
 // ─── Step: Créditos ──────────────────────────────────────────
 function mwSetupCreditsStep(source) {
-    const isIG = source === 'ig';
-    const credits = isIG ? getCreditsIG() : getCreditsGoogle();
-    const hasEl   = document.getElementById(isIG ? 'mwIGHasCredits'     : 'mwGoogleHasCredits');
-    const noEl    = document.getElementById(isIG ? 'mwIGNoCredits'      : 'mwGoogleNoCredits');
-    const countEl = document.getElementById(isIG ? 'mwIGCredCount'      : 'mwGoogleCredCount');
-    const iconEl  = document.getElementById(isIG ? 'mwIGCredIcon'       : 'mwGoogleCredIcon');
-    const titleEl = document.getElementById(isIG ? 'mwIGCredTitle'      : null);
+    const isIG    = source === 'ig';
+    const credits = getCredits();
+    const hasEl   = document.getElementById(isIG ? 'mwIGHasCredits'  : 'mwGoogleHasCredits');
+    const noEl    = document.getElementById(isIG ? 'mwIGNoCredits'   : 'mwGoogleNoCredits');
+    const countEl = document.getElementById(isIG ? 'mwIGCredCount'   : 'mwGoogleCredCount');
+    const iconEl  = document.getElementById(isIG ? 'mwIGCredIcon'    : 'mwGoogleCredIcon');
+    const titleEl = document.getElementById(isIG ? 'mwIGCredTitle'   : null);
 
     if (credits > 0) {
-        if (hasEl)  hasEl.style.display  = 'block';
-        if (noEl)   noEl.style.display   = 'none';
+        if (hasEl)   hasEl.style.display  = 'block';
+        if (noEl)    noEl.style.display   = 'none';
         if (countEl) countEl.textContent  = credits;
-        if (iconEl)  iconEl.className     = 'mw-hero-icon mw-icon-success';
-        if (iconEl)  iconEl.innerHTML     = '<i class="fas fa-check-circle"></i>';
+        if (iconEl)  { iconEl.className = 'mw-hero-icon mw-icon-success'; iconEl.innerHTML = '<i class="fas fa-check-circle"></i>'; }
         if (titleEl) titleEl.textContent  = 'Créditos OK!';
-        // Esconder botão de compra quando tem créditos (regra de sessão)
-        const buyBtnEl = isIG
-            ? document.querySelector('#mwIGNoCredits .mw-btn-next')
-            : document.querySelector('#mwGoogleNoCredits .mw-btn-next');
-        if (buyBtnEl) buyBtnEl.style.display = 'none';
-
         // Auto-avança após breve exibição
         setTimeout(() => {
-            if (mwState.currentStep === (isIG ? 'ig_credits' : 'google_credits')) {
+            if (mwState.currentStep === (isIG ? 'ig_credits' : 'google_credits'))
                 mwGoToStep(isIG ? 'ig_login' : 'google_ready');
-            }
         }, 900);
     } else {
         if (hasEl) hasEl.style.display = 'none';
         if (noEl)  noEl.style.display  = 'block';
-        if (iconEl) {
-            iconEl.className = 'mw-hero-icon';
-            iconEl.innerHTML = '<i class="fas fa-coins"></i>';
-        }
+        if (iconEl) { iconEl.className = 'mw-hero-icon'; iconEl.innerHTML = '<i class="fas fa-coins"></i>'; }
         if (titleEl) titleEl.textContent = 'Sem créditos';
-        // Garante que o botão de compra está visível (pode ter sido escondido numa visita anterior)
-        const buyBtnEl = isIG
-            ? document.querySelector('#mwIGNoCredits .mw-btn-next')
-            : document.querySelector('#mwGoogleNoCredits .mw-btn-next');
-        if (buyBtnEl) buyBtnEl.style.display = '';
     }
     mwUpdateFooter(mwState.currentStep);
 }
 
-function mwBuyCreditsIG() {
-    selectPack('instagram');
-    openBuyModal();
-}
-function mwBuyCreditsGoogle() {
-    selectPack('google');
-    openBuyModal();
-}
+function mwBuyCreditsIG()     { openBuyModal(); }
+function mwBuyCreditsGoogle() { openBuyModal(); }
 
 // ─── Step: Login Instagram ────────────────────────────────────
 function mwRefreshLoginStep() {
@@ -3130,8 +3091,8 @@ function mwUpdateFooter(step) {
 
     // Ocultar botão "Continuar" nos steps de crédito com compra pendente
     const isCreditsWithoutFunds =
-        (step === 'ig_credits'     && getCreditsIG()     <= 0) ||
-        (step === 'google_credits' && getCreditsGoogle() <= 0);
+        (step === 'ig_credits'     && getCredits() <= 0) ||
+        (step === 'google_credits' && getCredits() <= 0);
 
     // Ocultar no step de login quando não conectado
     const isLoginNotConn = step === 'ig_login' && !loadIgSession()?.loggedIn;
@@ -3215,16 +3176,13 @@ function mwOpenMenu() {
     if (!panel || !overlay) return;
 
     // Atualiza créditos
-    const ig     = getCreditsIG();
-    const google = getCreditsGoogle();
-    const credIG     = document.getElementById('mwMenuCredIG');
-    const credGoogle = document.getElementById('mwMenuCredGoogle');
-    if (credIG)     credIG.textContent     = ig;
-    if (credGoogle) credGoogle.textContent = google;
+    const n = getCredits();
+    const credEl = document.getElementById('mwMenuCredTotal');
+    if (credEl) credEl.textContent = n;
 
-    // Seção de compra: só mostra se todos zerados
+    // Seção de compra: sempre visível (qualquer momento)
     const buySection = document.getElementById('mwMenuBuySection');
-    if (buySection) buySection.style.display = (ig === 0 && google === 0) ? 'block' : 'none';
+    if (buySection) buySection.style.display = 'block';
 
     // Status do Instagram
     const session = loadIgSession();
@@ -3676,6 +3634,55 @@ function monitorSyncMobileDesktop() {
     }
 }
 
+function showMonitorSessionAlert() {
+    document.getElementById('monitorSessionAlert')?.remove();
+
+    const alert = document.createElement('div');
+    alert.id = 'monitorSessionAlert';
+    alert.style.cssText = [
+        'position:fixed;bottom:70px;left:50%;transform:translateX(-50%)',
+        'background:#0f1728;border:1px solid rgba(231,76,60,.5)',
+        'border-radius:14px;padding:1rem 1.1rem',
+        'z-index:9999;box-shadow:0 6px 30px rgba(0,0,0,.6)',
+        'max-width:360px;width:calc(100% - 2rem)',
+        'display:flex;flex-direction:column;gap:.6rem',
+    ].join(';');
+
+    alert.innerHTML = `
+        <div style="display:flex;align-items:center;gap:.6rem">
+            <i class="fas fa-shield-alt" style="color:#e74c3c;font-size:1.2rem;flex-shrink:0"></i>
+            <strong style="color:#fff;font-size:.9rem">Monitor pausado — Instagram detectou automação</strong>
+        </div>
+        <p style="margin:0;font-size:.78rem;color:rgba(255,255,255,.65);line-height:1.5">
+            O Instagram identificou atividade automatizada e desconectou a sessão.
+            <br><br>
+            <strong style="color:rgba(255,220,100,.9)">⚠️ Recomendação importante:</strong><br>
+            Use uma <strong style="color:#fff">nova conta secundária ou conta falsa</strong> exclusiva para o monitor — não use seu perfil principal.
+            Contas criadas apenas para isso têm muito menor risco de bloqueio.
+        </p>
+        <p style="margin:0;font-size:.75rem;color:rgba(255,180,100,.8);line-height:1.4">
+            <i class="fas fa-redo" style="margin-right:.3rem"></i>
+            Perfis com sync interrompido precisam ser <strong>removidos e adicionados novamente</strong> para recriar o snapshot base.
+        </p>
+        <div style="display:flex;gap:.5rem;margin-top:.2rem">
+            <button onclick="openLoginModal()" style="flex:1;background:var(--primary);border:none;color:#fff;border-radius:8px;padding:.5rem;font-size:.8rem;cursor:pointer;font-family:inherit;font-weight:600">
+                <i class="fas fa-sign-in-alt"></i> Reconectar
+            </button>
+            <button onclick="document.getElementById('monitorSessionAlert')?.remove()" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6);border-radius:8px;padding:.5rem .75rem;font-size:.8rem;cursor:pointer;font-family:inherit">
+                Fechar
+            </button>
+        </div>
+    `;
+    document.body.appendChild(alert);
+
+    if (Notification.permission === 'granted') {
+        new Notification('UltraProspec — Monitor pausado', {
+            body: 'Instagram detectou automação. Use uma conta secundária. Abra o app para mais detalhes.',
+            icon: '/favicon.ico',
+        });
+    }
+}
+
 function monitorResetPollBtn() {
     document.querySelectorAll('[onclick="monitorPollNow()"]').forEach(b => {
         b.disabled = false;
@@ -3754,6 +3761,11 @@ function monitorConnectSSE() {
 
 function monitorHandleEvent(ev) {
     if (ev.type === 'new_follower') {
+        deductCredit();
+        if (getCredits() <= 5 && getCredits() > 0)
+            showToast(`Atenção: apenas ${getCredits()} crédito${getCredits() !== 1 ? 's' : ''} restante${getCredits() !== 1 ? 's' : ''}!`, 'warning', 7000);
+        if (getCredits() <= 0)
+            setTimeout(() => openBuyModal(), 1000);
         monitorAddFeedItem(ev.profile, ev.follower, new Date(), true);
         if (!monitorUI.open) { monitorUI.unread++; updateMonitorBadge(); }
         if (Notification.permission === 'granted') {
@@ -3764,6 +3776,30 @@ function monitorHandleEvent(ev) {
             });
         }
         showToast(`Novo seguidor em @${ev.profile}: @${ev.follower.username}`, 'success', 6000);
+    }
+
+    if (ev.type === 'session_expired') {
+        monitorResetPollBtn();
+
+        // Marca TODOS os perfis como erro (inclusive os que estavam sincronizando)
+        document.querySelectorAll('.monitor-profile-item').forEach(item => {
+            const username = item.dataset.profile;
+            const statusEl = document.getElementById(`mps-${username}`);
+            item.classList.remove('monitor-status-syncing', 'monitor-status-active');
+            item.classList.add('monitor-status-error');
+
+            // Se estava sincronizando, avisa que precisa refazer
+            if (statusEl) {
+                const wasSyncing = statusEl.textContent.toLowerCase().includes('sincroniz');
+                statusEl.textContent = wasSyncing
+                    ? '⚠️ Sync interrompido — refaça'
+                    : 'Sessão expirada';
+            }
+        });
+
+        monitorSyncMobileDesktop();
+        showMonitorSessionAlert();
+        return;
     }
 
     if (ev.type === 'cycle_start') {
@@ -3792,6 +3828,13 @@ function monitorHandleEvent(ev) {
         monitorUpdateProfileStatus(ev.profile, 'active', txt);
     }
     if (ev.type === 'profile_error')   monitorUpdateProfileStatus(ev.profile, 'error', ev.error);
+
+    if (ev.type === 'next_check') {
+        ['monitorNextCheck', 'monitorNextCheckMobile'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) { el.textContent = ev.label; el.style.display = 'block'; }
+        });
+    }
 
     monitorSyncMobileDesktop();
 }
