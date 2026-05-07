@@ -38,19 +38,60 @@ db.exec(`
     detected_at      TEXT NOT NULL,
     seen             INTEGER DEFAULT 0
   );
+  CREATE TABLE IF NOT EXISTS monitor_credentials (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    sessionid    TEXT,
+    csrftoken    TEXT,
+    ds_user_id   TEXT,
+    cookie_string TEXT,
+    user_agent   TEXT,
+    username     TEXT,
+    saved_at     TEXT
+  );
 `);
 
 // ============================================
 // Monitor State
 // ============================================
+
+function saveMonitorCredentials(creds) {
+    db.prepare(`
+        INSERT INTO monitor_credentials (id, sessionid, csrftoken, ds_user_id, cookie_string, user_agent, username, saved_at)
+        VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            sessionid=excluded.sessionid, csrftoken=excluded.csrftoken,
+            ds_user_id=excluded.ds_user_id, cookie_string=excluded.cookie_string,
+            user_agent=excluded.user_agent, username=excluded.username,
+            saved_at=excluded.saved_at
+    `).run(
+        creds.sessionid || '', creds.csrftoken || '', creds.dsUserId || '',
+        creds.cookieString || '', creds.userAgent || '', creds.username || '',
+        new Date().toISOString()
+    );
+}
+
+function loadMonitorCredentials() {
+    const row = db.prepare('SELECT * FROM monitor_credentials WHERE id = 1').get();
+    if (!row?.sessionid) return null;
+    return {
+        loggedIn:     true,
+        sessionid:    row.sessionid,
+        csrftoken:    row.csrftoken,
+        dsUserId:     row.ds_user_id,
+        cookieString: row.cookie_string,
+        userAgent:    row.user_agent,
+        username:     row.username,
+    };
+}
+
 const monitor = {
-  credentials: null,   // IG creds salvas quando usuário conecta
-  clients:     new Set(), // SSE clients ativos
+  credentials: loadMonitorCredentials(), // carrega do DB ao iniciar
+  clients:     new Set(),
   timer:       null,
   polling:     false,
-  INTERVAL:    10 * 60 * 1000, // 10 minutos
-  POLL_PAGES:  10,             // 500 seguidores por poll
-  MAX_PAGES:   400,            // 20k seguidores no sync inicial
+  INTERVAL:    2 * 60 * 1000,
+  POLL_PAGES:  10,
+  MAX_PAGES:   400,
 };
 
 function monitorSend(data) {
@@ -101,38 +142,88 @@ function monitorAxiosMobile() {
   });
 }
 
+// Busca seguidores com fallback automático web→mobile
+async function monitorFetchFollowersPage(web, mobile, userId, maxId) {
+  const params = { count: 50, ...(maxId ? { max_id: maxId } : {}) };
+  const endpoint = `/api/v1/friendships/${userId}/followers/`;
+
+  // Tenta web primeiro
+  try {
+    const r = await web.get(endpoint, { params });
+    console.log(`[monitor followers] web status=${r.status} users=${r.data?.users?.length ?? '?'}`);
+    if (r.status === 200) return r.data;
+    if (r.status !== 429) {
+      console.warn(`[monitor followers] web status=${r.status} — tentando mobile`);
+    }
+  } catch (e) { console.warn('[monitor followers] web erro:', e.message); }
+
+  // Fallback mobile
+  if (mobile) {
+    try {
+      const rm = await mobile.get(endpoint, { params });
+      console.log(`[monitor followers] mobile status=${rm.status} users=${rm.data?.users?.length ?? '?'}`);
+      if (rm.status === 200) return rm.data;
+      console.warn(`[monitor followers] mobile status=${rm.status}`);
+    } catch (e) { console.warn('[monitor followers] mobile erro:', e.message); }
+  }
+
+  return null; // ambos falharam
+}
+
 // Sync inicial: busca TODOS os seguidores e salva no DB
 async function monitorFullSync(username, userId) {
   const insert = db.prepare('INSERT OR IGNORE INTO profile_followers (profile_username, follower_id) VALUES (?, ?)');
   const web    = monitorAxiosWeb();
   const mobile = monitorAxiosMobile();
-  if (!web) return;
+  if (!web) {
+    console.warn(`[monitor] sync @${username}: sem credenciais`);
+    db.prepare('UPDATE monitor_profiles SET status = ? WHERE username = ?').run('error', username);
+    monitorSend({ type: 'profile_error', profile: username, error: 'Sem credenciais. Reconecte o Instagram.' });
+    return;
+  }
 
-  let maxId = null, total = 0;
+  let maxId = null, total = 0, consecutive429 = 0;
   db.prepare('UPDATE monitor_profiles SET status = ? WHERE username = ?').run('syncing', username);
   monitorSend({ type: 'sync_start', profile: username });
+  console.log(`[monitor] iniciando sync @${username} (userId=${userId})`);
 
   for (let pg = 0; pg < monitor.MAX_PAGES; pg++) {
-    try {
-      const r = await web.get(`/api/v1/friendships/${userId}/followers/`, {
-        params: { count: 50, ...(maxId ? { max_id: maxId } : {}) }
-      });
-      if (r.status !== 200) break;
-      const users = r.data?.users || [];
-      if (!users.length) break;
-      db.transaction(() => { for (const u of users) if (u.pk) insert.run(username, String(u.pk)); })();
-      total += users.length;
-      if (pg % 5 === 0) monitorSend({ type: 'sync_progress', profile: username, count: total });
-      maxId = r.data?.next_max_id || null;
-      if (!maxId) break;
-      await sleep(500);
-    } catch { break; }
+    const data = await monitorFetchFollowersPage(web, mobile, userId, maxId);
+
+    if (!data) {
+      consecutive429++;
+      console.warn(`[monitor] sync @${username} pg${pg}: sem dados (${consecutive429}ª falha consecutiva)`);
+      if (consecutive429 >= 3) break;
+      await sleep(15000); // espera 15s antes de tentar novamente
+      continue;
+    }
+    consecutive429 = 0;
+
+    const users = data.users || [];
+    if (!users.length) break;
+
+    db.transaction(() => { for (const u of users) if (u.pk) insert.run(username, String(u.pk)); })();
+    total += users.length;
+
+    if (pg % 5 === 0 || total % 250 === 0)
+      monitorSend({ type: 'sync_progress', profile: username, count: total });
+
+    maxId = data.next_max_id || null;
+    if (!maxId) break;
+    await sleep(500);
+  }
+
+  if (total === 0) {
+    console.error(`[monitor] sync @${username}: falhou (0 seguidores obtidos)`);
+    db.prepare('UPDATE monitor_profiles SET status = ? WHERE username = ?').run('error', username);
+    monitorSend({ type: 'profile_error', profile: username, error: 'Não foi possível obter seguidores. Verifique se o perfil é público e se a sessão do Instagram está válida.' });
+    return;
   }
 
   db.prepare('UPDATE monitor_profiles SET follower_count = ?, status = ?, last_checked = ? WHERE username = ?')
     .run(total, 'active', new Date().toISOString(), username);
   monitorSend({ type: 'sync_done', profile: username, count: total });
-  console.log(`[monitor] sync @${username}: ${total} seguidores`);
+  console.log(`[monitor] sync @${username}: ${total} seguidores ✓`);
 }
 
 // Poll: busca primeiras páginas e detecta novos
@@ -153,20 +244,22 @@ async function monitorPollProfile(username) {
     }
 
     const currentUsers = new Map();
-    let maxId = null;
+    let maxId = null, pollFailed = false;
     for (let pg = 0; pg < monitor.POLL_PAGES; pg++) {
-      const r = await web.get(`/api/v1/friendships/${userId}/followers/`, {
-        params: { count: 50, ...(maxId ? { max_id: maxId } : {}) }
-      });
-      if (r.status !== 200) break;
-      const users = r.data?.users || [];
+      const data = await monitorFetchFollowersPage(web, mobile, userId, maxId);
+      if (!data) { pollFailed = true; break; }
+      const users = data.users || [];
       if (!users.length) break;
       for (const u of users) if (u.pk) currentUsers.set(String(u.pk), u);
-      maxId = r.data?.next_max_id || null;
+      maxId = data.next_max_id || null;
       if (!maxId) break;
       await sleep(400);
     }
 
+    if (pollFailed && currentUsers.size === 0) {
+      console.warn(`[monitor] poll @${username}: falha no fetch de seguidores`);
+      return;
+    }
     if (currentUsers.size === 0) return;
 
     const storedCount = db.prepare('SELECT COUNT(*) as n FROM profile_followers WHERE profile_username = ?').get(username)?.n || 0;
@@ -208,15 +301,21 @@ async function monitorPollProfile(username) {
   }
 }
 
-async function monitorRunCycle() {
+async function monitorRunCycle(manual = false) {
   if (monitor.polling) return;
   monitor.polling = true;
   const profiles = db.prepare('SELECT username FROM monitor_profiles WHERE status != ?').all('paused');
+  if (profiles.length > 0) monitorSend({ type: 'cycle_start', manual, profiles: profiles.map(p => p.username) });
+  let totalNew = 0;
   for (const { username } of profiles) {
+    const before = db.prepare('SELECT COUNT(*) as n FROM monitor_events WHERE profile_username = ?').get(username)?.n || 0;
     await monitorPollProfile(username);
+    const after  = db.prepare('SELECT COUNT(*) as n FROM monitor_events WHERE profile_username = ?').get(username)?.n || 0;
+    totalNew += Math.max(0, after - before);
     await sleep(2000);
   }
   monitor.polling = false;
+  monitorSend({ type: 'cycle_done', manual, totalNew, profiles: profiles.map(p => p.username) });
 }
 
 function monitorStart() {
@@ -591,6 +690,13 @@ async function fetchBio(webClient, mobileClient, pk, username) {
 // ============================================
 app.get('/api/status', (req, res) => {
     const ig = getIg(req);
+    // Sempre atualiza credenciais do monitor ao verificar status
+    // garante que o polling continua após reload de página
+    if (ig.loggedIn && ig.sessionid) {
+        monitor.credentials = { ...ig }; saveMonitorCredentials(ig);
+        if (db.prepare('SELECT COUNT(*) as n FROM monitor_profiles').get()?.n > 0)
+            monitorStart();
+    }
     res.json({ loggedIn: ig.loggedIn || false, user: ig.loggedIn ? { username: ig.username } : null });
 });
 
@@ -1590,7 +1696,7 @@ app.post('/api/ig-auth/browser-cancel', async (req, res) => {
 app.post('/api/monitor/credentials', (req, res) => {
     const ig = getIg(req);
     if (!ig.loggedIn) return res.status(401).json({ error: 'Não autenticado' });
-    monitor.credentials = { ...ig };
+    monitor.credentials = { ...ig }; saveMonitorCredentials(ig);
     res.json({ ok: true });
 });
 
@@ -1621,7 +1727,7 @@ app.get('/api/monitor/profiles', (req, res) => {
 app.post('/api/monitor/add', async (req, res) => {
     const ig = getIg(req);
     if (!ig.loggedIn) return res.status(401).json({ error: 'Não autenticado' });
-    monitor.credentials = { ...ig };
+    monitor.credentials = { ...ig }; saveMonitorCredentials(ig);
 
     const raw = (req.body.username || '').trim().replace('@', '').replace(/.*instagram\.com\//, '').replace(/\/.*/, '');
     if (!raw) return res.status(400).json({ error: 'Username inválido' });
@@ -1670,6 +1776,28 @@ app.get('/api/monitor/events', (req, res) => {
 app.post('/api/monitor/events/seen', (req, res) => {
     db.prepare('UPDATE monitor_events SET seen = 1').run();
     res.json({ ok: true });
+});
+
+// GET /api/monitor/debug — estado do banco (diagnóstico)
+app.get('/api/monitor/debug', (req, res) => {
+    const profiles = db.prepare('SELECT username, status, follower_count, last_checked FROM monitor_profiles').all();
+    const counts   = db.prepare('SELECT profile_username, COUNT(*) as n FROM profile_followers GROUP BY profile_username').all();
+    const events   = db.prepare('SELECT profile_username, COUNT(*) as n FROM monitor_events GROUP BY profile_username').all();
+    res.json({
+        hasCredentials: !!monitor.credentials,
+        timerActive:    !!monitor.timer,
+        isPolling:      monitor.polling,
+        profiles,
+        snapshotCounts: counts,
+        eventCounts:    events,
+    });
+});
+
+// POST /api/monitor/poll-now — força um ciclo de poll imediato
+app.post('/api/monitor/poll-now', async (req, res) => {
+    if (!monitor.credentials) return res.status(400).json({ error: 'Sem credenciais — recarregue a página logado no Instagram' });
+    res.json({ ok: true, message: 'Poll iniciado' });
+    monitorRunCycle(true).catch(e => console.error('[monitor] poll-now:', e.message));
 });
 
 // Retoma monitor ao iniciar (se houver perfis cadastrados)

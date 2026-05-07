@@ -2397,6 +2397,11 @@ input[type=checkbox] { accent-color: var(--primary); }
 }
 .mwcs-stay-warning i { color: var(--warning); flex-shrink: 0; margin-top: .1rem; }
 .mwcs-stay-warning strong { color: rgba(255,255,255,.85); }
+.mwcs-stay-warning.mwcs-safety {
+    background: rgba(0,180,75,.07);
+    border-color: rgba(0,180,75,.25);
+}
+.mwcs-stay-warning.mwcs-safety i { color: #00c853; }
 
 /* Status */
 .mwcs-status-msg {
@@ -2912,6 +2917,21 @@ input[type=checkbox] { accent-color: var(--primary); }
    =================================================== */
 
 /* Badge "X duplicados ignorados" dentro do progress */
+.capture-safety-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: .55rem;
+    margin-top: .65rem;
+    background: rgba(0,180,75,.06);
+    border: 1px solid rgba(0,180,75,.2);
+    border-radius: 8px;
+    padding: .6rem .8rem;
+    font-size: .75rem;
+    color: rgba(255,255,255,.6);
+    line-height: 1.5;
+}
+.capture-safety-notice i { color: #00c853; flex-shrink: 0; margin-top: .15rem; font-size: .85rem; }
+
 .dup-badge {
     display: inline-flex;
     align-items: center;

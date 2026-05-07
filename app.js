@@ -135,7 +135,9 @@ const state = {
     flowMode: 'auto',          // 'auto' | 'advanced'
     segmentProfile: null,      // resultado de analyzeSegment()
     autoSegment: '',           // texto do segmento no modo auto
-    autoCollecting: false      // true durante coleta no modo auto (ignora corte por crédito)
+    autoCollecting: false,     // true durante coleta no modo auto (ignora corte por crédito)
+    lastCaptureType: null,     // tipo da última captura (para PDF contextualizado)
+    lastCaptureTarget: '',     // alvo da última captura
 };
 
 // ============================================
@@ -891,6 +893,9 @@ async function startCapture() {
         startTimer();
         updateDupBadge();
 
+        state.lastCaptureType   = 'profile_analysis_auto';
+        state.lastCaptureTarget = autoTarget;
+
         const autoQty = 200;
         const params  = new URLSearchParams({
             type: 'profile_analysis', target: autoTarget,
@@ -1002,6 +1007,9 @@ async function startCapture() {
         );
     }
     recordCompetitorUse(watchTarget);
+
+    state.lastCaptureType   = type;
+    state.lastCaptureTarget = target || profileTarget || '';
 
     const params = new URLSearchParams({ type, target, quantity, fetchBio: fetchBio ? 'true' : 'false', posts });
     if (profileTarget) params.set('profileTarget', profileTarget);
@@ -1140,11 +1148,14 @@ function openLeadPreviewModal() {
         const em = lead.email    ? '<i class="fas fa-envelope" title="Tem email" style="color:var(--primary);font-size:.85rem"></i>' : '';
         const contacts = (wa || em) ? wa + em : '<small style="color:var(--gray)">—</small>';
         const prevTop = lead.isTop10 ? `<span class="top10-badge" style="font-size:.55rem">🏆 TOP ${lead.rank}</span> ` : '';
+        const isAutoPreview = state.flowMode === 'auto';
         const scoreBadge = isRecentFollowers
             ? `<span style="font-size:.7rem;color:var(--gray)">#${lead.recentFollowerOrder || '—'}</span>`
-            : (() => { const score = lead.score || 0; const { label: slabel, cls } = scoreLabel(score); return `<span class="score-badge ${cls}" style="font-size:.7rem;padding:.18rem .45rem">${slabel} ${score}pts</span>`; })();
-        rows += `<tr${lead.isTop10 ? ' style="background:rgba(243,156,18,.08)"' : ''}>
-            <td class="prev-user">${prevTop}${maskUsername(lead.username)}</td>
+            : isAutoPreview
+                ? (() => { const score = lead.score || 0; const { label: slabel, cls } = scoreLabel(score); return `<span class="score-badge ${cls}" style="font-size:.7rem;padding:.18rem .45rem">${slabel} ${score}pts</span>`; })()
+                : '<span style="font-size:.7rem;color:var(--gray)">—</span>';
+        rows += `<tr${(lead.isTop10 && isAutoPreview) ? ' style="background:rgba(243,156,18,.08)"' : ''}>
+            <td class="prev-user">${isAutoPreview ? prevTop : ''}${maskUsername(lead.username)}</td>
             <td>${scoreBadge}</td>
             <td class="prev-contacts">${contacts}</td>
         </tr>`;
@@ -1253,6 +1264,9 @@ function startCaptureGoogle() {
 
     const keyword  = city ? `${kw} em ${city}` : kw;
     const quantity = 50;
+
+    state.lastCaptureType   = 'google_maps';
+    state.lastCaptureTarget = keyword;
 
     state.isCapturing = true;
     state.startTime   = new Date();
@@ -1519,9 +1533,20 @@ function renderRow(lead, prepend = false) {
     const tbody = document.getElementById('resultsBody');
     document.getElementById('emptyRow')?.remove();
 
-    const isRecent = lead.recentFollowerOrder != null;
-    const score = isRecent ? 0 : (lead.score ?? calculateScore(lead));
-    const { label: slabel, cls } = isRecent ? { label: `#${lead.recentFollowerOrder}`, cls: 'score-neutral' } : scoreLabel(score);
+    const isRecent   = lead.recentFollowerOrder != null;
+    const isAutoMode = state.flowMode === 'auto';
+    const score      = isRecent ? 0 : (lead.score ?? calculateScore(lead));
+
+    // Score badge: só no modo automático e não em "recentes"
+    const scoreCellHtml = (() => {
+        if (isRecent) return `<span style="color:var(--gray);font-size:.85rem">#${lead.recentFollowerOrder}</span>`;
+        if (!isAutoMode) return '<span style="color:var(--gray);font-size:.8rem">—</span>';
+        const { label: slabel, cls } = scoreLabel(score);
+        return `<span class="score-badge ${cls}">${slabel}<br><small>${score}pts</small></span>`;
+    })();
+
+    // Insights/why: só no modo automático
+    const whyCellHtml = (isRecent || !isAutoMode) ? '' : buildTop10Badge(lead) + buildSegmentReasons(lead) + buildWhyHtml(lead);
 
     const photoHtml = lead.photoUrl
         ? `<img src="${lead.photoUrl}" class="user-photo" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
@@ -1529,34 +1554,37 @@ function renderRow(lead, prepend = false) {
         : `<div class="user-photo-placeholder">${(lead.fullName || lead.username).charAt(0).toUpperCase()}</div>`;
 
     const row = document.createElement('tr');
-    if (lead.isTop10) row.classList.add('top10-row');
+    if (lead.isTop10 && isAutoMode) row.classList.add('top10-row');
     row.dataset.id           = lead.id;
     row.dataset.scoreVal     = isRecent ? lead.recentFollowerOrder : score;
-    row.dataset.score        = cls;
+    row.dataset.score        = isAutoMode ? scoreLabel(score).cls : 'score-neutral';
     row.dataset.has_whatsapp = lead.whatsapp ? '1' : '0';
     row.dataset.has_email    = lead.email    ? '1' : '0';
     row.dataset.is_public    = lead.isPrivate ? '0' : '1';
     row.dataset.username     = (lead.username || '').toLowerCase();
     row.dataset.fullname     = (lead.fullName  || '').toLowerCase();
 
-    const whyExtra = buildTop10Badge(lead) + buildSegmentReasons(lead);
     row.innerHTML = `
         <td><input type="checkbox" class="row-checkbox" data-id="${lead.id}"></td>
         <td>${photoHtml}</td>
         <td><a href="https://instagram.com/${lead.username}" target="_blank" class="ig-link">@${lead.username}</a>${lead.isPrivate ? ' <i class="fas fa-lock" style="color:var(--gray);font-size:.7rem"></i>' : ''}<br><small style="color:var(--gray)">${lead.fullName || ''}</small></td>
-        <td>${isRecent ? `<span style="color:var(--gray);font-size:.85rem">${slabel}</span>` : `<span class="score-badge ${cls}">${slabel}<br><small>${score}pts</small></span>`}</td>
-        <td class="why-cell">${isRecent ? '' : whyExtra + buildWhyHtml(lead)}</td>
+        <td>${scoreCellHtml}</td>
+        <td class="why-cell">${whyCellHtml}</td>
         <td class="whatsapp-value">${lead.whatsapp ? `<a href="https://wa.me/${lead.whatsapp.replace(/\D/g,'')}" target="_blank" class="contact-link wa-link"><i class="fab fa-whatsapp"></i> ${lead.whatsapp}</a>` : '-'}</td>
         <td class="email-value">${lead.email ? `<a href="mailto:${lead.email}" class="contact-link mail-link"><i class="fas fa-envelope"></i> ${lead.email}</a>` : '-'}</td>
         <td class="bio-text" title="${lead.bio || ''}">${lead.bio ? lead.bio.slice(0, 60) + (lead.bio.length > 60 ? '...' : '') : '-'}</td>
         <td>${buildAutoActionsHtml(lead)}<button class="action-btn delete" onclick="deleteLead('${lead.id}')" title="Excluir"><i class="fas fa-trash"></i></button></td>
     `;
 
-    // Inserir em ordem de score
+    // Inserir: auto mode ordena por score, advanced mantém ordem de chegada
     const rows = [...tbody.querySelectorAll('tr[data-id]')];
-    const insertBefore = rows.find(r => parseInt(r.dataset.scoreVal || 0) < score);
-    if (insertBefore) tbody.insertBefore(row, insertBefore);
-    else tbody.appendChild(row);
+    if (isAutoMode) {
+        const insertBefore = rows.find(r => parseInt(r.dataset.scoreVal || 0) < score);
+        if (insertBefore) tbody.insertBefore(row, insertBefore);
+        else tbody.appendChild(row);
+    } else {
+        tbody.appendChild(row);
+    }
 }
 
 function renderAllLeads() {
@@ -1580,31 +1608,38 @@ function renderAllLeads() {
         state.filteredLeads.forEach(lead => renderRowGoogle(lead));
     } else {
         // Instagram — renderização com score/fotos inline
+        const isAutoMode2 = state.flowMode === 'auto';
         state.filteredLeads.forEach(lead => {
-            const isRecent2 = lead.recentFollowerOrder != null;
-            const score = isRecent2 ? 0 : (lead.score ?? 0);
-            const { label: slabel, cls } = isRecent2
-                ? { label: `#${lead.recentFollowerOrder}`, cls: 'score-neutral' }
-                : scoreLabel(score);
-            const initial = ((lead.fullName || lead.username || '?').charAt(0)).toUpperCase();
+            const isRecent2  = lead.recentFollowerOrder != null;
+            const score      = isRecent2 ? 0 : (lead.score ?? 0);
+            const initial    = ((lead.fullName || lead.username || '?').charAt(0)).toUpperCase();
+
+            const scoreCellHtml2 = (() => {
+                if (isRecent2) return `<span style="color:var(--gray);font-size:.85rem">#${lead.recentFollowerOrder}</span>`;
+                if (!isAutoMode2) return '<span style="color:var(--gray);font-size:.8rem">—</span>';
+                const { label: slabel, cls } = scoreLabel(score);
+                return `<span class="score-badge ${cls}">${slabel}<br><small>${score}pts</small></span>`;
+            })();
+
+            const whyCellHtml2 = (isRecent2 || !isAutoMode2) ? '' : buildTop10Badge(lead) + buildSegmentReasons(lead) + buildWhyHtml(lead);
+
             const photoHtml = lead.photoUrl
                 ? `<img src="${lead.photoUrl}" class="user-photo" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                    <div class="user-photo-placeholder" style="display:none">${initial}</div>`
                 : `<div class="user-photo-placeholder">${initial}</div>`;
 
             const row = document.createElement('tr');
-            if (lead.isTop10) row.classList.add('top10-row');
+            if (lead.isTop10 && isAutoMode2) row.classList.add('top10-row');
             row.dataset.id       = lead.id;
             row.dataset.scoreVal = isRecent2 ? lead.recentFollowerOrder : score;
-            row.dataset.score    = cls;
+            row.dataset.score    = isAutoMode2 ? scoreLabel(score).cls : 'score-neutral';
 
-            const whyExtra2 = isRecent2 ? '' : buildTop10Badge(lead) + buildSegmentReasons(lead);
             row.innerHTML = `
                 <td><input type="checkbox" class="row-checkbox" data-id="${lead.id}"></td>
                 <td>${photoHtml}</td>
                 <td><a href="https://instagram.com/${lead.username}" target="_blank" class="ig-link">@${lead.username}</a>${lead.isPrivate?' <i class="fas fa-lock" style="color:var(--gray);font-size:.7rem"></i>':''}<br><small style="color:var(--gray)">${lead.fullName||''}</small></td>
-                <td>${isRecent2 ? `<span style="color:var(--gray);font-size:.85rem">${slabel}</span>` : `<span class="score-badge ${cls}">${slabel}<br><small>${score}pts</small></span>`}</td>
-                <td class="why-cell">${isRecent2 ? '' : whyExtra2 + buildWhyHtml(lead)}</td>
+                <td>${scoreCellHtml2}</td>
+                <td class="why-cell">${whyCellHtml2}</td>
                 <td class="whatsapp-value">${lead.whatsapp?`<a href="https://wa.me/${lead.whatsapp.replace(/\D/g,'')}" target="_blank" class="contact-link wa-link"><i class="fab fa-whatsapp"></i> ${lead.whatsapp}</a>`:'-'}</td>
                 <td class="email-value">${lead.email?`<a href="mailto:${lead.email}" class="contact-link mail-link"><i class="fas fa-envelope"></i> ${lead.email}</a>`:'-'}</td>
                 <td class="bio-text" title="${lead.bio||''}">${lead.bio?lead.bio.slice(0,60)+(lead.bio.length>60?'...':''):'-'}</td>
@@ -3034,6 +3069,14 @@ function mwCaptureComplete() {
     set('mwdsEm', em);
 }
 
+// ─── Voltar da tela de conclusão para o wizard ────────────────
+function mwRestartFromDone() {
+    document.getElementById('mwDoneScreen').style.display = 'none';
+    document.getElementById('mobileWizard').style.display = 'flex';
+    document.getElementById('mobileWizard').style.flexDirection = 'column';
+    mwGoToStep('source');
+}
+
 // ─── Ver resultados (tabela desktop) ─────────────────────────
 function mwViewResults() {
     document.getElementById('mwDoneScreen').style.display = 'none';
@@ -3214,6 +3257,355 @@ function mwCloseMenu() {
     setTimeout(() => { overlay.style.display = 'none'; }, 280);
 }
 
+// ============================================
+// EXPORTAR PDF — Padrão Relatório Comercial
+// ============================================
+function getPDF(orientation = 'landscape') {
+    const { jsPDF } = window.jspdf;
+    return new jsPDF({ orientation, unit: 'pt', format: 'a4' });
+}
+
+function pdfHeader(doc, titulo, subtitulo, total) {
+    const W = doc.internal.pageSize.width;
+
+    // Barra superior azul-escura corporativa
+    doc.setFillColor(10, 18, 40);
+    doc.rect(0, 0, W, 58, 'F');
+
+    // Acento colorido fino
+    doc.setFillColor(0, 180, 75);
+    doc.rect(0, 58, W, 2.5, 'F');
+
+    // Nome da empresa
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(15);
+    doc.setFont('helvetica', 'bold');
+    doc.text('ULTRAPROSPEC', 30, 24);
+
+    // Slogan institucional
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(130, 160, 190);
+    doc.text('Inteligência Comercial & Prospecção', 30, 36);
+
+    // Título do relatório
+    doc.setFontSize(10.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(220, 235, 220);
+    doc.text(titulo.toUpperCase(), 30, 51);
+
+    // Data e total — direita
+    const now = new Date();
+    const dataHora = now.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(160, 185, 160);
+    doc.text(dataHora, W - 30, 24, { align: 'right' });
+    if (subtitulo) {
+        doc.setTextColor(180, 200, 180);
+        doc.text(subtitulo, W - 30, 36, { align: 'right' });
+    }
+    if (total) {
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 210, 90);
+        doc.text(`${total} contatos`, W - 30, 50, { align: 'right' });
+    }
+}
+
+function pdfFooter(doc, classificacao = 'USO INTERNO — CONFIDENCIAL') {
+    const pages = doc.internal.getNumberOfPages();
+    const W = doc.internal.pageSize.width;
+    const H = doc.internal.pageSize.height;
+    for (let i = 1; i <= pages; i++) {
+        doc.setPage(i);
+        // Linha separadora
+        doc.setDrawColor(220, 225, 230);
+        doc.setLineWidth(0.5);
+        doc.line(30, H - 22, W - 30, H - 22);
+        // Texto esquerda
+        doc.setFontSize(7.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(150, 155, 165);
+        doc.text(`${classificacao}  •  Gerado em ${new Date().toLocaleString('pt-BR')}`, 30, H - 10);
+        // Paginação direita
+        doc.text(`${i} / ${pages}`, W - 30, H - 10, { align: 'right' });
+    }
+}
+
+function pdfTableStyles(accentColor) {
+    return {
+        styles:      { fontSize: 8.5, cellPadding: 6, textColor: [25, 35, 50], lineColor: [220, 225, 230], lineWidth: 0.3 },
+        headStyles:  { fillColor: accentColor, textColor: 255, fontStyle: 'bold', fontSize: 8.5, cellPadding: 7 },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        tableLineColor: [200, 210, 215],
+        tableLineWidth: 0.3,
+    };
+}
+
+// ── Monitor: Relatório de Novos Contatos Identificados ──────────
+async function exportMonitorPDF() {
+    try {
+        const r = await fetch('/api/monitor/events');
+        const { events } = await r.json();
+        if (!events?.length) { showToast('Nenhum contato identificado ainda', 'warning'); return; }
+
+        const doc = getPDF('portrait');
+        const W   = doc.internal.pageSize.width;
+
+        pdfHeader(doc,
+            'Relatório de Novos Contatos',
+            'Rastreamento de Novos Seguidores',
+            events.length
+        );
+
+        // Bloco de sumário
+        doc.setFillColor(245, 248, 252);
+        doc.roundedRect(30, 72, W - 60, 30, 3, 3, 'F');
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(80, 95, 115);
+        const periodo = (() => {
+            if (!events.length) return '—';
+            const datas = events.map(e => new Date(e.detected_at)).sort((a,b) => a-b);
+            const fmt = d => d.toLocaleDateString('pt-BR');
+            return datas.length === 1 ? fmt(datas[0]) : `${fmt(datas[0])} a ${fmt(datas[datas.length-1])}`;
+        })();
+        doc.text(`Período de identificação: ${periodo}     |     Total de contatos: ${events.length}     |     Classificação: Inteligência de Mercado`, W / 2, 91, { align: 'center' });
+
+        doc.autoTable({
+            startY: 112,
+            head: [['Nº', 'Perfil Digital', 'Nome / Identificação', 'Data de Identificação', 'Hora']],
+            body: events.map((e, i) => {
+                const dt = new Date(e.detected_at);
+                return [
+                    String(i + 1).padStart(2, '0'),
+                    e.follower_username ? `@${e.follower_username}` : '—',
+                    e.follower_fullname || '—',
+                    dt.toLocaleDateString('pt-BR'),
+                    dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                ];
+            }),
+            ...pdfTableStyles([15, 90, 55]),
+            columnStyles: {
+                0: { cellWidth: 32, halign: 'center', fontStyle: 'bold' },
+                1: { cellWidth: 130, textColor: [0, 100, 200], fontStyle: 'bold' },
+                2: { cellWidth: 165 },
+                3: { cellWidth: 105, halign: 'center' },
+                4: { cellWidth: 60,  halign: 'center' },
+            },
+            margin: { left: 30, right: 30 },
+            didDrawCell: (data) => {
+                // Adiciona link clicável na coluna "Perfil Digital" (col index 1)
+                if (data.section === 'body' && data.column.index === 1) {
+                    const username = events[data.row.index]?.follower_username;
+                    if (username) {
+                        doc.link(
+                            data.cell.x, data.cell.y,
+                            data.cell.width, data.cell.height,
+                            { url: `https://www.instagram.com/${username}/` }
+                        );
+                    }
+                }
+            },
+        });
+
+        pdfFooter(doc, 'USO INTERNO — INTELIGÊNCIA DE MERCADO');
+        doc.save(`relatorio-contatos-${new Date().toISOString().slice(0,10)}.pdf`);
+        showToast(`Relatório exportado — ${events.length} contatos`, 'success');
+    } catch (err) {
+        showToast('Erro ao gerar relatório: ' + err.message, 'error');
+    }
+}
+
+// ── Leads: Relatório contextualizado por tipo de captura ──────────
+function exportLeadsPDF() {
+    const leads = (state.filteredLeads?.length ? state.filteredLeads : state.leads) || [];
+    if (!leads.length) { showToast('Nenhum contato para exportar', 'warning'); return; }
+
+    const type   = state.lastCaptureType   || (state.activeSource === 'google' ? 'google_maps' : 'followers');
+    const target = state.lastCaptureTarget || '';
+    const W_PAGE = 841.89; // A4 landscape pt
+
+    // ── Metadados por tipo ─────────────────────────────────────────
+    const META = {
+        profile_analysis_auto: {
+            titulo:   'Relatório de Análise de Audiência',
+            subtitulo:'Inteligência de Engajamento — Modo Automático',
+            descricao:`Análise cruzada de seguidores, curtidores e comentaristas do perfil ${target}. Leads ranqueados por índice de engajamento e relevância.`,
+            cor: [15, 90, 55],
+        },
+        profile_analysis: {
+            titulo:   'Relatório de Análise Completa de Audiência',
+            subtitulo:'Seguidores + Curtidores + Comentaristas',
+            descricao:`Levantamento combinado de todos os tipos de interação do perfil ${target}: seguidores, curtidores e comentaristas dos últimos posts.`,
+            cor: [15, 90, 55],
+        },
+        followers: {
+            titulo:   'Relatório de Mapeamento de Seguidores',
+            subtitulo:'Perfis com Vínculo Orgânico',
+            descricao:`Perfis identificados como seguidores do perfil ${target}. Representa audiência com interesse estabelecido na página monitorada.`,
+            cor: [30, 80, 160],
+        },
+        recent_likes: {
+            titulo:   'Relatório de Engajamento Recente',
+            subtitulo:'Curtidores dos Últimos Conteúdos Publicados',
+            descricao:`Perfis com interação ativa (curtidas) nos conteúdos mais recentes do perfil ${target}. Alta probabilidade de interesse no momento da análise.`,
+            cor: [180, 60, 20],
+        },
+        likes: {
+            titulo:   'Relatório de Engajamento por Publicação',
+            subtitulo:'Curtidores de Conteúdo Específico',
+            descricao:`Perfis que interagiram com uma publicação específica. Contatos com interesse demonstrado no tema ou produto abordado no conteúdo.`,
+            cor: [180, 60, 20],
+        },
+        comments: {
+            titulo:   'Relatório de Engajamento Qualificado',
+            subtitulo:'Comentaristas de Publicação',
+            descricao:`Perfis que comentaram em uma publicação específica. Nível de engajamento superior ao de curtidas — indicativo de interesse ativo.`,
+            cor: [130, 40, 130],
+        },
+        common_followers: {
+            titulo:   'Relatório de Audiência Compartilhada',
+            subtitulo:'Perfis com Interesse em Múltiplos Concorrentes',
+            descricao:`Contatos identificados como seguidores de 2 ou mais perfis analisados simultaneamente. Alta relevância estratégica — audiência de nicho validada.`,
+            cor: [100, 60, 10],
+        },
+        hashtag: {
+            titulo:   'Relatório de Prospecção por Segmento',
+            subtitulo:'Perfis Identificados por Perfil Profissional ou Nicho',
+            descricao:`Mapeamento de perfis com correspondência ao segmento ou área de atuação pesquisada. Filtro baseado em bio, nome e categoria declarada.`,
+            cor: [20, 110, 120],
+        },
+        google_maps: {
+            titulo:   'Relatório de Prospecção Empresarial',
+            subtitulo:`Levantamento Comercial — ${target}`,
+            descricao:`Mapeamento de estabelecimentos e empresas locais com correspondência à busca realizada. Dados coletados de fontes públicas de geolocalização.`,
+            cor: [30, 100, 200],
+        },
+    };
+
+    const meta = META[type] || META['followers'];
+    const isGoogle = type === 'google_maps';
+    const doc = getPDF('landscape');
+    const W   = doc.internal.pageSize.width;
+
+    pdfHeader(doc, meta.titulo, meta.subtitulo, leads.length);
+
+    // Bloco descritivo do relatório
+    const comContato = isGoogle
+        ? leads.filter(l => l.phone || l.whatsapp).length
+        : leads.filter(l => l.whatsapp || l.email || l.publicPhone).length;
+
+    doc.setFillColor(245, 248, 252);
+    doc.roundedRect(30, 72, W - 60, 36, 3, 3, 'F');
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(60, 80, 100);
+    const descLines = doc.splitTextToSize(meta.descricao, W - 80);
+    doc.text(descLines[0], 38, 85);
+    if (descLines[1]) doc.text(descLines[1], 38, 95);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 120, 140);
+    doc.text(
+        `Total: ${leads.length} contatos     |     Com dado de contato: ${comContato}     |     Data: ${new Date().toLocaleDateString('pt-BR')}`,
+        W - 38, 95, { align: 'right' }
+    );
+
+    const startY = 118;
+
+    if (isGoogle) {
+        doc.autoTable({
+            startY,
+            head: [['Nº', 'Razão Social / Nome', 'Segmento', 'Telefone', 'WhatsApp', 'Avaliação', 'Endereço', 'Site']],
+            body: leads.map((l, i) => [
+                String(i + 1).padStart(2, '0'),
+                l.name || '—',
+                l.category || '—',
+                l.phone || '—',
+                l.whatsapp || '—',
+                l.rating ? `${l.rating} ★  (${l.reviewCount || 0})` : '—',
+                (l.address || '—').slice(0, 40),
+                l.website ? l.website.replace(/^https?:\/\//, '').slice(0, 28) : '—',
+            ]),
+            ...pdfTableStyles(meta.cor),
+            columnStyles: {
+                0: { cellWidth: 28, halign: 'center', fontStyle: 'bold' },
+                1: { cellWidth: 128 },
+                2: { cellWidth: 90 },
+                3: { cellWidth: 82 },
+                4: { cellWidth: 90 },
+                5: { cellWidth: 68, halign: 'center' },
+                6: { cellWidth: 128 },
+                7: { cellWidth: 105 },
+            },
+            margin: { left: 20, right: 20 },
+        });
+    } else {
+        const interestLabel = s => s >= 65 ? 'Alto' : s >= 35 ? 'Médio' : 'Baixo';
+        const isAuto = state.flowMode === 'auto';
+
+        // Coluna extra para tipos específicos
+        const hasEngagement = ['profile_analysis','profile_analysis_auto','recent_likes','likes','comments','common_followers'].includes(type);
+
+        const head = hasEngagement
+            ? [['Nº', 'Perfil Digital', 'Nome / Identificação', 'Tipo de Interação', 'WhatsApp', 'E-mail', 'Descrição', ...(isAuto ? ['Índice'] : [])]]
+            : [['Nº', 'Perfil Digital', 'Nome / Identificação', 'WhatsApp', 'E-mail', 'Descrição', ...(isAuto ? ['Índice'] : [])]];
+
+        const interactionLabel = l => {
+            if (l.commentCount > 0 && l.likeCount > 0) return 'Curtiu e comentou';
+            if (l.commentCount > 0) return `Comentou (${l.commentCount}x)`;
+            if (l.likeCount > 0)    return `Curtiu (${l.likeCount}x)`;
+            if (l.isFollower)       return 'Seguidor';
+            if (l.crossCount > 1)   return `${l.crossCount} perfis`;
+            return '—';
+        };
+
+        const body = leads.map((l, i) => {
+            const base = [
+                String(i + 1).padStart(2, '0'),
+                l.username ? `@${l.username}` : '—',
+                l.fullName || '—',
+            ];
+            if (hasEngagement) base.push(interactionLabel(l));
+            base.push(
+                l.whatsapp || l.publicPhone || '—',
+                l.email    || l.publicEmail || '—',
+                (l.bio || '').slice(0, 50) + ((l.bio?.length > 50) ? '…' : ''),
+            );
+            if (isAuto) base.push(l.score ? interestLabel(l.score) : '—');
+            return base;
+        });
+
+        const colBase = hasEngagement
+            ? { 0:{cellWidth:28,halign:'center',fontStyle:'bold'}, 1:{cellWidth:105}, 2:{cellWidth:115}, 3:{cellWidth:95}, 4:{cellWidth:90}, 5:{cellWidth:115}, 6:{cellWidth:170} }
+            : { 0:{cellWidth:28,halign:'center',fontStyle:'bold'}, 1:{cellWidth:110}, 2:{cellWidth:130}, 3:{cellWidth:100}, 4:{cellWidth:125}, 5:{cellWidth:200} };
+        if (isAuto) colBase[Object.keys(colBase).length] = { cellWidth: 50, halign:'center' };
+
+        doc.autoTable({
+            startY, head, body,
+            ...pdfTableStyles(meta.cor),
+            columnStyles: colBase,
+            margin: { left: 20, right: 20 },
+        });
+    }
+
+    const filename = {
+        profile_analysis_auto: 'analise-completa-auto',
+        profile_analysis:      'analise-completa',
+        followers:             'seguidores',
+        recent_likes:          'curtidores-recentes',
+        likes:                 'curtidores-post',
+        comments:              'comentaristas',
+        common_followers:      'audiencia-compartilhada',
+        hashtag:               'prospeccao-segmento',
+        google_maps:           'empresas-locais',
+    }[type] || 'leads';
+
+    pdfFooter(doc, 'USO INTERNO — MATERIAL COMERCIAL CONFIDENCIAL');
+    doc.save(`relatorio-${filename}-${new Date().toISOString().slice(0,10)}.pdf`);
+    showToast(`Relatório exportado — ${leads.length} contatos`, 'success');
+}
+
 // ─── Bootstrap ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => { mwInit(); monitorInit(); });
 
@@ -3284,6 +3676,33 @@ function monitorSyncMobileDesktop() {
     }
 }
 
+function monitorResetPollBtn() {
+    document.querySelectorAll('[onclick="monitorPollNow()"]').forEach(b => {
+        b.disabled = false;
+        b.innerHTML = '<i class="fas fa-sync-alt"></i> Verificar agora';
+    });
+}
+
+async function monitorPollNow() {
+    // Evita duplo clique
+    const btns = document.querySelectorAll('[onclick="monitorPollNow()"]');
+    if ([...btns].some(b => b.disabled)) return;
+    btns.forEach(b => { b.disabled = true; b.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Verificando...'; });
+
+    try {
+        const r = await fetch('/api/monitor/poll-now', { method: 'POST' });
+        const d = await r.json();
+        if (!d.ok) {
+            showToast(d.error || 'Erro ao verificar', 'error');
+            monitorResetPollBtn();
+        }
+        // Resultado chega via SSE (cycle_done) — botão resetado lá
+    } catch {
+        showToast('Erro de conexão com o servidor', 'error');
+        monitorResetPollBtn();
+    }
+}
+
 async function monitorAddProfileMobile() {
     const input = document.getElementById('monitorInputMobile');
     if (input) {
@@ -3335,12 +3754,8 @@ function monitorConnectSSE() {
 
 function monitorHandleEvent(ev) {
     if (ev.type === 'new_follower') {
-        monitorAddFeedItem(ev.profile, ev.follower);
-        if (!monitorUI.open) {
-            monitorUI.unread++;
-            updateMonitorBadge();
-        }
-        // Notificação do browser
+        monitorAddFeedItem(ev.profile, ev.follower, new Date(), true);
+        if (!monitorUI.open) { monitorUI.unread++; updateMonitorBadge(); }
         if (Notification.permission === 'granted') {
             new Notification(`Novo seguidor em @${ev.profile}`, {
                 body: `@${ev.follower.username}${ev.follower.fullName ? ' — ' + ev.follower.fullName : ''}`,
@@ -3350,11 +3765,34 @@ function monitorHandleEvent(ev) {
         }
         showToast(`Novo seguidor em @${ev.profile}: @${ev.follower.username}`, 'success', 6000);
     }
-    if (ev.type === 'sync_start')    monitorUpdateProfileStatus(ev.profile, 'syncing', 'Sincronizando...');
-    if (ev.type === 'sync_progress') monitorUpdateProfileStatus(ev.profile, 'syncing', `Sincronizando... ${ev.count}`);
-    if (ev.type === 'sync_done')     monitorUpdateProfileStatus(ev.profile, 'active',  `${ev.count} seguidores`);
-    if (ev.type === 'profile_updated') monitorUpdateProfileStatus(ev.profile, 'active', `Atualizado agora`);
-    if (ev.type === 'profile_error')   monitorUpdateProfileStatus(ev.profile, 'error',  ev.error);
+
+    if (ev.type === 'cycle_start') {
+        // Marca todos os perfis como "verificando" quando é manual
+        if (ev.manual) {
+            (ev.profiles || []).forEach(p => monitorUpdateProfileStatus(p, 'syncing', 'Verificando...'));
+            monitorUI.pollNewCount = 0;
+        }
+    }
+
+    if (ev.type === 'cycle_done') {
+        if (ev.manual) {
+            monitorResetPollBtn();
+            const msg = ev.totalNew > 0
+                ? `✓ ${ev.totalNew} novo${ev.totalNew !== 1 ? 's' : ''} seguidor${ev.totalNew !== 1 ? 'es' : ''} encontrado${ev.totalNew !== 1 ? 's' : ''}!`
+                : 'Nenhum seguidor novo desde a última verificação.';
+            showToast(msg, ev.totalNew > 0 ? 'success' : 'info', 5000);
+        }
+    }
+
+    if (ev.type === 'sync_start')      monitorUpdateProfileStatus(ev.profile, 'syncing', 'Sincronizando...');
+    if (ev.type === 'sync_progress')   monitorUpdateProfileStatus(ev.profile, 'syncing', `Sincronizando ${ev.count}...`);
+    if (ev.type === 'sync_done')       monitorUpdateProfileStatus(ev.profile, 'active',  `Base criada — ${ev.count} seguidores`);
+    if (ev.type === 'profile_updated') {
+        const txt = ev.newCount > 0 ? `+${ev.newCount} novo${ev.newCount !== 1 ? 's' : ''}!` : 'Verificado agora';
+        monitorUpdateProfileStatus(ev.profile, 'active', txt);
+    }
+    if (ev.type === 'profile_error')   monitorUpdateProfileStatus(ev.profile, 'error', ev.error);
+
     monitorSyncMobileDesktop();
 }
 

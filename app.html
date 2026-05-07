@@ -8,6 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 <div class="app-container">
@@ -90,7 +92,7 @@
             <div id="monitorPanel" style="display:none">
                 <div class="sidebar-section">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
-                        <h3 style="margin:0"><i class="fas fa-satellite-dish"></i> Monitor de Concorrentes</h3>
+                        <h3 style="margin:0"><i class="fas fa-satellite-dish"></i> Monitor de Novos Seguidores</h3>
                         <span id="monitorStatusBadge" class="monitor-badge monitor-off">Parado</span>
                     </div>
                     <p style="font-size:.75rem;color:var(--gray);margin:0 0 .75rem">Detecta novos seguidores automaticamente a cada 10 min e envia notificação.</p>
@@ -99,14 +101,22 @@
                         <button onclick="monitorAddProfile()" class="btn-primary" style="padding:.5rem .9rem;font-size:.85rem;white-space:nowrap"><i class="fas fa-plus"></i></button>
                     </div>
                     <div id="monitorProfileList" style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:.75rem"></div>
-                    <button onclick="monitorRequestNotifications()" id="btnNotifPerm" class="btn-secondary" style="width:100%;font-size:.8rem;padding:.45rem;display:none">
-                        <i class="fas fa-bell"></i> Ativar notificações do browser
-                    </button>
+                    <div style="display:flex;gap:.5rem">
+                        <button onclick="monitorPollNow()" class="btn-secondary" style="flex:1;font-size:.8rem;padding:.45rem">
+                            <i class="fas fa-sync-alt"></i> Verificar agora
+                        </button>
+                        <button onclick="monitorRequestNotifications()" id="btnNotifPerm" class="btn-secondary" style="flex:1;font-size:.8rem;padding:.45rem;display:none">
+                            <i class="fas fa-bell"></i> Ativar notificações
+                        </button>
+                    </div>
                 </div>
                 <div class="sidebar-section" id="monitorFeedSection" style="display:none">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
                         <h3 style="margin:0;font-size:.9rem"><i class="fas fa-bell"></i> Novos Seguidores</h3>
-                        <button onclick="monitorMarkSeen()" style="background:none;border:none;color:var(--gray);font-size:.72rem;cursor:pointer;padding:0">Marcar lidos</button>
+                        <div style="display:flex;gap:.5rem;align-items:center">
+                            <button onclick="exportMonitorPDF()" style="background:none;border:none;color:var(--primary);font-size:.72rem;cursor:pointer;padding:0;display:flex;align-items:center;gap:.25rem"><i class="fas fa-file-pdf"></i> PDF</button>
+                            <button onclick="monitorMarkSeen()" style="background:none;border:none;color:var(--gray);font-size:.72rem;cursor:pointer;padding:0">Marcar lidos</button>
+                        </div>
                     </div>
                     <div id="monitorFeed" style="display:flex;flex-direction:column;gap:.35rem;max-height:320px;overflow-y:auto"></div>
                 </div>
@@ -115,7 +125,7 @@
             <!-- Botão Monitor — desktop sidebar -->
             <button onclick="openMonitorPanel()" id="btnOpenMonitor" style="width:100%;margin-bottom:.65rem;background:rgba(var(--primary-rgb),.08);border:1px solid rgba(var(--primary-rgb),.25);border-radius:10px;padding:.6rem .75rem;color:#fff;cursor:pointer;display:flex;align-items:center;gap:.55rem;font-size:.83rem;font-weight:600;position:relative;transition:background .2s" onmouseover="this.style.background='rgba(var(--primary-rgb),.16)'" onmouseout="this.style.background='rgba(var(--primary-rgb),.08)'">
                 <i class="fas fa-satellite-dish" style="color:var(--primary);font-size:.95rem"></i>
-                <span style="flex:1;text-align:left">Monitor de Concorrentes</span>
+                <span style="flex:1;text-align:left">Monitor de Novos Seguidores</span>
                 <span id="monitorUnreadBadge" style="display:none;background:#e74c3c;color:#fff;border-radius:50%;width:18px;height:18px;font-size:.65rem;align-items:center;justify-content:center;flex-shrink:0"></span>
             </button>
 
@@ -538,6 +548,10 @@
                     <div class="progress-fill" id="progressFill"></div>
                 </div>
                 <div id="dupBadge" class="dup-badge" style="display:none"></div>
+                <div class="capture-safety-notice">
+                    <i class="fas fa-shield-alt"></i>
+                    <span>A análise é realizada de forma pausada e controlada para proteger o perfil conectado. Nossa plataforma simula o comportamento humano nas buscas, garantindo que o Instagram não identifique atividade automatizada e bloqueie sua conta.</span>
+                </div>
             </div>
 
             <!-- Filters -->
@@ -577,6 +591,9 @@
                         </button>
                         <button class="btn btn-sm btn-danger" id="btnExcluirSelecionados">
                             <i class="fas fa-trash"></i> Excluir
+                        </button>
+                        <button class="btn btn-sm btn-outline" onclick="exportLeadsPDF()" style="color:var(--primary);border-color:rgba(var(--primary-rgb),.4)">
+                            <i class="fas fa-file-pdf"></i> Exportar PDF
                         </button>
                     </div>
                 </div>
@@ -712,9 +729,9 @@
                     </button>
                     <button class="mw-mode-card mw-mode-card-monitor" onclick="mwChooseMode('monitor')">
                         <div class="mw-mode-card-top">
-                            <strong><i class="fas fa-satellite-dish"></i> Monitor de Concorrentes</strong>
+                            <strong><i class="fas fa-satellite-dish"></i> Monitor de Novos Seguidores</strong>
                         </div>
-                        <small>Receba notificações quando alguém novo seguir seu concorrente</small>
+                        <small>Saiba em tempo real quem acabou de seguir os perfis que você monitora</small>
                     </button>
                 </div>
             </div>
@@ -725,8 +742,8 @@
                     <div class="mw-hero-icon" style="background:rgba(var(--primary-rgb),.15)">
                         <i class="fas fa-satellite-dish" style="color:var(--primary)"></i>
                     </div>
-                    <h2>Monitor de Concorrentes</h2>
-                    <p>Fique por dentro de quem está seguindo seus concorrentes</p>
+                    <h2>Monitor de Novos Seguidores</h2>
+                    <p>Acompanhe em tempo real quem está seguindo os perfis monitorados</p>
                 </div>
                 <div style="padding:0 .25rem 1rem;display:flex;flex-direction:column;gap:.75rem">
                     <div style="background:var(--surface2);border-radius:12px;padding:1rem;display:flex;flex-direction:column;gap:.6rem">
@@ -1282,12 +1299,12 @@
                 </button>
             </div>
 
-            <!-- Monitor de Concorrentes -->
+            <!-- Monitor de Novos Seguidores -->
             <div class="mw-menu-section" style="margin-top:1rem">
-                <p class="mw-menu-section-title"><i class="fas fa-satellite-dish"></i> Monitoramento</p>
+                <p class="mw-menu-section-title"><i class="fas fa-satellite-dish"></i> Novos Seguidores</p>
                 <button onclick="mwCloseMenu(); mwGoToMonitor()" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:.65rem .85rem;color:#fff;cursor:pointer;display:flex;align-items:center;gap:.6rem;font-size:.85rem;text-align:left">
                     <i class="fas fa-satellite-dish" style="color:var(--primary)"></i>
-                    <span style="flex:1">Monitor de Concorrentes</span>
+                    <span style="flex:1">Monitor de Novos Seguidores</span>
                     <span id="mwMenuMonitorBadge" style="display:none;background:#e74c3c;color:#fff;border-radius:50%;min-width:18px;height:18px;font-size:.65rem;align-items:center;justify-content:center;padding:0 3px"></span>
                 </button>
             </div>
@@ -1347,10 +1364,10 @@
                 <strong id="mwcsScanCount">—</strong>
             </div>
 
-            <!-- Aviso: não sair da tela -->
-            <div class="mwcs-stay-warning">
-                <i class="fas fa-exclamation-triangle"></i>
-                <span><strong>Não saia desta tela</strong> durante a captura. O processo pode demorar alguns minutos dependendo do tamanho do perfil.</span>
+            <!-- Aviso segurança -->
+            <div class="mwcs-stay-warning mwcs-safety">
+                <i class="fas fa-shield-alt"></i>
+                <span><strong>Análise protegida em andamento.</strong> Nossa plataforma realiza as buscas de forma pausada e controlada, simulando comportamento humano para proteger seu perfil conectado e evitar bloqueios do Instagram. Não saia desta tela durante a captura.</span>
             </div>
 
             <!-- Mini stats -->
@@ -1387,7 +1404,9 @@
          ══════════════════════════════════════════════════════ -->
     <div id="mwDoneScreen" class="mw-fullscreen mw-done-screen" style="display:none">
         <div class="mwcs-topbar">
-            <div style="width:36px"></div>
+            <button class="mwcs-x-btn" onclick="mwRestartFromDone()" title="Nova captura">
+                <i class="fas fa-arrow-left"></i>
+            </button>
             <span class="mwcs-topbar-title">Captura concluída</span>
             <button class="mw-hamburger-btn" onclick="mwOpenMenu()" aria-label="Menu" style="display:flex">
                 <span></span><span></span><span></span>
@@ -1663,9 +1682,14 @@
                 <input type="text" id="monitorInputMobile" placeholder="@concorrente" style="flex:1;background:var(--surface3);border:1px solid var(--border);border-radius:8px;padding:.55rem .75rem;color:#fff;font-size:.9rem;outline:none">
                 <button onclick="monitorAddProfileMobile()" class="btn-primary" style="padding:.55rem 1rem;font-size:.9rem"><i class="fas fa-plus"></i></button>
             </div>
-            <button onclick="monitorRequestNotifications()" id="btnNotifPermMobile" class="btn-secondary" style="width:100%;font-size:.8rem;padding:.5rem;margin-top:.6rem;display:none">
-                <i class="fas fa-bell"></i> Ativar notificações
-            </button>
+            <div style="display:flex;gap:.5rem;margin-top:.6rem">
+                <button onclick="monitorPollNow()" class="btn-secondary" style="flex:1;font-size:.85rem;padding:.5rem">
+                    <i class="fas fa-sync-alt"></i> Verificar agora
+                </button>
+                <button onclick="monitorRequestNotifications()" id="btnNotifPermMobile" class="btn-secondary" style="flex:1;font-size:.85rem;padding:.5rem;display:none">
+                    <i class="fas fa-bell"></i> Notificações
+                </button>
+            </div>
         </div>
         <!-- Lista de perfis -->
         <div id="monitorProfileListMobile" style="display:flex;flex-direction:column;gap:.4rem"></div>
@@ -1673,7 +1697,10 @@
         <div id="monitorFeedSectionMobile" style="display:none;background:var(--surface2);border-radius:12px;padding:1rem">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
                 <strong style="font-size:.9rem"><i class="fas fa-bell"></i> Novos Seguidores</strong>
-                <button onclick="monitorMarkSeen()" style="background:none;border:none;color:var(--gray);font-size:.72rem;cursor:pointer">Marcar lidos</button>
+                <div style="display:flex;gap:.75rem;align-items:center">
+                    <button onclick="exportMonitorPDF()" style="background:none;border:none;color:var(--primary);font-size:.8rem;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:.25rem"><i class="fas fa-file-pdf"></i> PDF</button>
+                    <button onclick="monitorMarkSeen()" style="background:none;border:none;color:var(--gray);font-size:.72rem;cursor:pointer">Marcar lidos</button>
+                </div>
             </div>
             <div id="monitorFeedMobile" style="display:flex;flex-direction:column;gap:.4rem"></div>
         </div>
